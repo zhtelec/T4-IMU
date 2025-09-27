@@ -1,0 +1,53 @@
+/* -*- mode: C; -*- */
+
+#ifndef _HELP_H_
+#define _HELP_H_
+
+const char      helpString[] =
+  "network ip [ip] [mask] [gw]     set my ip, netmask, and gateway\n"
+  "network dns [dns1] [dns2]       set the dns ip\n"
+  "network port [port]             set my port       (default: xxxx)\n"
+  "network ipflag [val]            set ip flags\n"
+  "                                  static           use static ip, dhcp disable\n"
+  "                                  dhcp             use dhcp,      dhcp enable\n"
+  "\n"
+  "network multiip [ip]            set the multicast ip (default: 10.0.0.xxx)\n"
+  "network multiport [port]        set the multicast udp port   (default: 23901)\n"
+  "\n"
+  "network ptp [mode]              set ptp master/slvae   (default: slave)\n"
+  "\n"
+
+  "imu speed [speed]               set i/f speed  0:set default setting, 1--15:1--15MHz\n"
+  "imu param [acc] [gyr] [odr]     set afsr/gfsr/odr  the value is set the folloowings\n"
+  "imu afsr [num]                  set accel fsr     7=2G, 8=4G, 9=8G, 10=16G, 11=32G (+-G)\n"
+  "imu gfsr [num]                  set gyeo  fsr     6=125, 7=250, 8=500, 9=1000, 10=2000, 11=4000 (+-dps)\n"
+  "imu odr [num]                   set odr           5=13Hz, 6=25Hz, 7=50Hz, 8=100Hz, 9=200Hz,\n"
+  "                                                 10=400Hz, 11=800Hz, 12=1600Hz, 13=3200Hz, 14=6400Hz\n"
+  "imu show [1/0]                  show imu data     0=disable, 1=enable\n"
+  "\n"
+  "gnss showpvt [0/1]              print pvt\n"
+  "gnss showtime [0/1]             print time\n"
+  "\n"
+  "gnssdo diagmeas [sel] [pllin]   manual frequency measument sel: 0=cpu 24MHz, 1=ext,  pllin: frequency in Hz\n"
+  "gnssdo piddis [num] [0/1]       pll disable\n"
+  "gnssdo showstat [0/1]           show status\n"
+  "gnssdo debug [num] [0/1]        debug\n"
+  "\n"
+  "dac [num] [val]                 set dac value  num: dac number, val value (hex, 16bit)"
+  "                                   num: 0: MCU 24MHz VCXO, 1: external"
+  "\n"
+  "eeprom erase 0xdeadbeef         erase eeprom\n"
+  "eeprom camfps [val]             set cam fps value (float value ex:60.00)\n"
+  "eeprom showall                  show the eeprom value\n"
+  "\n"
+  "version [-v]                    show the version number\n"
+  "                                  -v: print the compiled time\n"
+  "reset                           reset mcu\n"
+  "firmupdate [key]                firmware update from \"Teensy Loader\"\n"
+  "                                  key: 0xdeadbeef\n"
+  "\n"
+  "help                            show this text\n"
+  "\0"
+;
+
+#endif

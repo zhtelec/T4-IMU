@@ -1,0 +1,6 @@
+eeprom erase 0xdeadbeef         erase eeprom
+
+version                         show the version number
+reset                           reset esp
+
+help                            show this text
