@@ -479,8 +479,8 @@ GnssdoPid24MHzInit(void)
   p->Ki = CONfIG_GNSSDO_PID_24MHZ_KI;
   p->Kd = CONfIG_GNSSDO_PID_24MHZ_KD;
 
-  p->offset = 32768.0;
-  p->dac    =  p->offset;
+  p->offset = CONfIG_GNSSDO_PID_24MHZ_OFFSET;
+  p->dac    = p->offset;
   //p->diffRingDepth = CONFIG_GNSSDO_DIFF_HISTORY_LEN_MIN;
   p->diffRingDepth = 4;
   p->diffRingDepthChgUp   = 16;
@@ -504,7 +504,7 @@ GnssdoPidVcocxoInit(void)
   p->Kp = CONfIG_GNSSDO_PID_OCXO_KP;
   p->Ki = CONfIG_GNSSDO_PID_OCXO_KI;
   p->Kd = CONfIG_GNSSDO_PID_OCXO_KD;
-  p->offset =  32768.0;
+  p->offset =  CONfIG_GNSSDO_PID_OCXO_OFFSET;
   p->dac    =  p->offset;
   p->diffRingDepth = CONFIG_GNSSDO_DIFF_HISTORY_LEN_MIN;
   p->diffRingDepthChgUp = 2;
@@ -642,7 +642,7 @@ GnssdoPid(struct _stPid *p, int current, int target)
 #endif
   }
 
-  if(gnssdo.seq != GNSSDO_SEQ_RUNNING) dac = 32768;
+  if(gnssdo.seq != GNSSDO_SEQ_RUNNING) dac = p->offset;
 
   if(p->debug & GNSSDO_DEBUG_SHOW_FREQ_RESULT) {
     Serial.printf("pid%d %d %4d/%4d freq:%d/diff:%2d/acc:%3d/a_l:%8.5f",

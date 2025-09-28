@@ -197,7 +197,7 @@
 #define CONfIG_GNSSDO_PID_OCXO_KI               (-48000.0)
 #define CONfIG_GNSSDO_PID_OCXO_KD               (-10.0)
 #define CONfIG_GNSSDO_PID_OCXO_KI_FINEFACTOR    (1/4)
-#define CONfIG_GNSSDO_PID_OCXO_OFFSET           32768.0
+#define CONfIG_GNSSDO_PID_OCXO_OFFSET           36000.0
 
 #define CONFIG_GNSSDO_DAC_TICK                  0x10
 
