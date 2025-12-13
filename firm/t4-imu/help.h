@@ -40,6 +40,8 @@ const char      helpString[] =
   "eeprom camfps [val]             set cam fps value (float value ex:60.00)\n"
   "eeprom showall                  show the eeprom value\n"
   "\n"
+  "i2cscan [bus]                   scan i2c slave device\n"
+  "\n"
   "version [-v]                    show the version number\n"
   "                                  -v: print the compiled time\n"
   "reset                           reset mcu\n"

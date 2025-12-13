@@ -46,6 +46,8 @@ void                    SystemWaitUsCounter(uint32_t tout);
 int                     SystemSpiInit(int unit);
 void                    SystemSpiSetSpeed(int unit, int speed);
 int                     SystemSpiTransfer(int unit, int cs, const uint8_t *pTx, int lenTx, uint8_t *pRx, int lenRx, struct _stSystemSpiParam *pParam);
+int                     SystemSpiGetCsxGpioNum(int unit, int numCs);
+int                     SystemSpiSetCsx(int unit, int numCs, int val);
 
 int                     SystemI2cInit(int unit);
 int                     SystemI2cTransfer(int unit, int addr, const uint8_t *pTx, int lenTx, uint8_t *pRx, int lenRx, struct _stSystemI2cParam *pParam);
@@ -66,6 +68,7 @@ void                    SystemPidCalc50MHz(int current, int target);
 void                    SystemPidCalcVcocxo(int current, int target);
 
 void                    SystemSetLed0(int on);
+void                    SystemSetLedL(int on);
 void                    SystemReset(void);
 
 

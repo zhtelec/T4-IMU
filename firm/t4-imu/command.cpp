@@ -239,6 +239,13 @@ CommandExec(int unit, int ac, char *av[])
   } else if(!strcmp(av[0], "eeprom")) {
     EepromCommand(ac, av);
 
+  } else if(!strcmp(av[0], "i2cscan")) {
+    uint32_t    val;
+    if(ac >= 2) {
+      val = strtoul(av[1], NULL, 16);
+      SystemI2cScan(val);
+    }
+
   } else if(!strcmp(av[0], "debug")) {
     CommandDebug(unit, ac, av);
 
@@ -248,30 +255,15 @@ CommandExec(int unit, int ac, char *av[])
   } else if(!strcmp(av[0], "info")) {
   } else if(!strcmp(av[0], "reset")) {
     SystemReset();
-#if 0
-#ifndef __CORE_CM7_H_GENERIC
-#define SCB_AIRCR_VECTKEY_Pos              16U                                            /*!< SCB AIRCR: VECTKEY Position */
-#define SCB_AIRCR_PRIGROUP_Pos              8U                                            /*!< SCB AIRCR: PRIGROUP Position */
-#define SCB_AIRCR_PRIGROUP_Msk             (7UL << SCB_AIRCR_PRIGROUP_Pos)                /*!< SCB AIRCR: PRIGROUP Mask */
-#define SCB_AIRCR_SYSRESETREQ_Pos           2U                                            /*!< SCB AIRCR: SYSRESETREQ Position */
-#define SCB_AIRCR_SYSRESETREQ_Msk          (1UL << SCB_AIRCR_SYSRESETREQ_Pos)             /*!< SCB AIRCR: SYSRESETREQ Mask */
-#endif
-
-    asm("dsb");                                                         // Ensure all outstanding memory accesses included
-                                                                        // buffered write are completed before reset
-    SCB_AIRCR  = (uint32_t)((0x5FAUL << SCB_AIRCR_VECTKEY_Pos)    |
-                             (SCB_AIRCR & SCB_AIRCR_PRIGROUP_Msk) |
-                             SCB_AIRCR_SYSRESETREQ_Msk    );            // Keep priority group unchanged
-    asm("dsb");                                                         // Ensure completion of memory access
-    while(1);
-#endif
 
   } else if(!strcmp(av[0], "firmupdate")) {
     uint32_t    val;
-    val = strtoul(av[1], NULL, 16);
-    if(val == 0xdeadbeef) {
-      _reboot_Teensyduino_();
-      while(1);
+    if(ac >= 2) {
+      val = strtoul(av[1], NULL, 16);
+      if(val == 0xdeadbeef) {
+        _reboot_Teensyduino_();
+        while(1);
+      }
     }
 
   } else if(!strcmp(av[0], "version")) {

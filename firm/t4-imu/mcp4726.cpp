@@ -31,6 +31,9 @@ Mcp4726Set(int unit, int value)
   int           len;
   int           addr;
 
+  value += 8;   // round to top 12bit
+  if(value > 65536) value = 65535;
+
 #if 0
   // update DAC value and store to EEPROM
   addr = 0x61;

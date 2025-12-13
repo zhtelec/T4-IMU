@@ -105,7 +105,6 @@ ImudrvProbe(void)
 
           if((bus & 0xff) < 0x80) {
             result = ImudrvProbeStub(bus, p);
-            if(result == IMUDRV_SUCCESS) break;
 
           } else {
             bus = 0xff;
@@ -117,61 +116,62 @@ ImudrvProbe(void)
 
         } else if(bus < 0x2000) {       // if = SPI
           result = ImudrvProbeStub(bus, p);
-          if(result == IMUDRV_SUCCESS) break;
 
           if((bus & 0x00ff) >= 15) bus |= 0xff;
         }
-      }
 
-      if(result == IMUDRV_SUCCESS) {
-        if(((bus >> 12) & 0xf) == 1) {
-          Serial.printf("# IMU%d: SPI%d CS%x device %s\n",
-                        id, (bus >> 8) & 0xf, bus & 0xff, p->name);
-        } else if(((bus >> 12) & 0xf) == 0) {
-          Serial.printf("# IMU%d: I2C%d(0x%02x), device %s\n",
-                        id, (bus >> 8) & 0xf, bus & 0xff, p->name);
+
+        if(result == IMUDRV_SUCCESS) {
+          if(((bus >> 12) & 0xf) == 1) {
+            Serial.printf("# IMU%d: SPI%d CS%x device %s\n",
+                          id, (bus >> 8) & 0xf, bus & 0xff, p->name);
+          } else if(((bus >> 12) & 0xf) == 0) {
+            Serial.printf("# IMU%d: I2C%d(0x%02x), device %s\n",
+                          id, (bus >> 8) & 0xf, bus & 0xff, p->name);
+          }
+
+          uint32_t      val;
+          int           accfsr, gyrfsr, odr /*fmtUart, fmtIp*/;
+          int           speed;
+          val = EepromGet16(CONFIG_EEPROM_IMU_PARAM_POS);
+          accfsr        = (val >> CONFIG_EEPROM_IMU_PARAM_ACC_SHIFT) & 0xf;
+          gyrfsr        = (val >> CONFIG_EEPROM_IMU_PARAM_GYR_SHIFT) & 0xf;
+          odr           = (val >> CONFIG_EEPROM_IMU_PARAM_ODR_SHIFT) & 0xf;
+
+          spiParam = p->spiParam;
+          val = EepromGet8(CONFIG_EEPROM_IMU_PARAM2_POS);
+          if(val & CONFIG_EEPROM_IMU_PARAM2_SPEED_MASK) {
+            speed       = ((val & CONFIG_EEPROM_IMU_PARAM2_SPEED_MASK) >> CONFIG_EEPROM_IMU_PARAM2_SPEED_SHIFT);
+            spiParam.speed = speed * 1000 * 1000;
+          }
+
+          imudrv.sc[id].accfsr       = accfsr;
+          imudrv.sc[id].gyrfsr       = gyrfsr;
+          imudrv.sc[id].odr          = odr;
+          imudrv.sc[id].spiParam     = spiParam;
+
+          struct _stProbedSc          *pSc;
+          int                         intr;
+          pSc = &imudrv.sc[id];
+          pSc->id      = id;
+          pSc->bus     = bus;
+          pSc->pDriver = p;
+          ImudrvInit(id,
+                     0,                         // power mode
+                     pSc->accfsr,       // accfsr
+                     pSc->gyrfsr,       // gyrfsr
+                     pSc->odr           // odr
+                     );
+
+          if((intr = ImudrvGetInterruptPin(bus)) >= 0) {
+            Serial.printf("#       intr line: %d\n", intr);
+            pSc->intrPort = intr;
+            imudrv.idByIntr[intr] = id;
+          }
+
+          id++;
+          //break;
         }
-
-        uint32_t      val;
-        int           accfsr, gyrfsr, odr /*fmtUart, fmtIp*/;
-        int           speed;
-        val = EepromGet16(CONFIG_EEPROM_IMU_PARAM_POS);
-        accfsr        = (val >> CONFIG_EEPROM_IMU_PARAM_ACC_SHIFT) & 0xf;
-        gyrfsr        = (val >> CONFIG_EEPROM_IMU_PARAM_GYR_SHIFT) & 0xf;
-        odr           = (val >> CONFIG_EEPROM_IMU_PARAM_ODR_SHIFT) & 0xf;
-
-        spiParam = p->spiParam;
-        val = EepromGet8(CONFIG_EEPROM_IMU_PARAM2_POS);
-        if(val & CONFIG_EEPROM_IMU_PARAM2_SPEED_MASK) {
-          speed       = ((val & CONFIG_EEPROM_IMU_PARAM2_SPEED_MASK) >> CONFIG_EEPROM_IMU_PARAM2_SPEED_SHIFT);
-          spiParam.speed = speed * 1000 * 1000;
-        }
-
-        imudrv.sc[id].accfsr       = accfsr;
-        imudrv.sc[id].gyrfsr       = gyrfsr;
-        imudrv.sc[id].odr          = odr;
-        imudrv.sc[id].spiParam     = spiParam;
-
-        struct _stProbedSc          *pSc;
-        int                         intr;
-        pSc = &imudrv.sc[id];
-        pSc->id      = id;
-        pSc->bus     = bus;
-        pSc->pDriver = p;
-        ImudrvInit(id,
-                      0,                         // power mode
-                      pSc->accfsr,       // accfsr
-                      pSc->gyrfsr,       // gyrfsr
-                      pSc->odr           // odr
-                      );
-
-        if((intr = ImudrvGetInterruptPin(bus)) >= 0) {
-          Serial.printf("#       intr line: %d\n", intr);
-          pSc->intrPort = intr;
-          imudrv.idByIntr[intr] = id;
-        }
-
-        id++;
       }
 
     }
@@ -262,6 +262,14 @@ ImudrvInit(int id, int powermode, int accfsr, int gyrfsr, int odr)
 
     attachInterrupt(CONFIG_GPIO_IMU_DRDY10, ImudrvInterruptDrdy10, RISING);
     attachInterrupt(CONFIG_GPIO_IMU_DRDY11, ImudrvInterruptDrdy11, RISING);
+    if(SystemGetBoardId() == CONFIG_BOARDID_T4_SENSECAP) {
+      attachInterrupt(CONFIG_GPIO_IMU_DRDY12, ImudrvInterruptDrdy12, RISING);
+      attachInterrupt(CONFIG_GPIO_IMU_DRDY13, ImudrvInterruptDrdy13, RISING);
+      attachInterrupt(CONFIG_GPIO_IMU_DRDY00, ImudrvInterruptDrdy00, RISING);
+      attachInterrupt(CONFIG_GPIO_IMU_DRDY01, ImudrvInterruptDrdy01, RISING);
+      attachInterrupt(CONFIG_GPIO_IMU_DRDY02, ImudrvInterruptDrdy02, RISING);
+      attachInterrupt(CONFIG_GPIO_IMU_DRDY03, ImudrvInterruptDrdy03, RISING);
+    }
 
   } else {
 
@@ -523,6 +531,18 @@ ImudrvGetInterruptPin(int bus)
     intr = CONFIG_GPIO_IMU_DRDY10; break;
   case  0x1101:        // SPI1 CS1X
     intr = CONFIG_GPIO_IMU_DRDY11; break;
+  case  0x1102:        // SPI1 CS2X
+    intr = CONFIG_GPIO_IMU_DRDY12; break;
+  case  0x1103:        // SPI1 CS3X
+    intr = CONFIG_GPIO_IMU_DRDY13; break;
+  case  0x1000:        // SPI0 CS0X
+    intr = CONFIG_GPIO_IMU_DRDY00; break;
+  case  0x1001:        // SPI0 CS1X
+    intr = CONFIG_GPIO_IMU_DRDY01; break;
+  case  0x1002:        // SPI0 CS2X
+    intr = CONFIG_GPIO_IMU_DRDY02; break;
+  case  0x1003:        // SPI0 CS3X
+    intr = CONFIG_GPIO_IMU_DRDY03; break;
   }
 
   return intr;
@@ -532,28 +552,61 @@ ImudrvGetInterruptPin(int bus)
 static void
 ImudrvInterruptDrdy10(void)
 {
-  struct _stProbedSc    *p;
-  int                   id;
 
-  if((id = imudrv.idByIntr[CONFIG_GPIO_IMU_DRDY10]) >= 0) {
 #if     CONFIG_IMU_CALC_TIME_PULSE
+  int                   id;
+  if((imudrv.idByIntr[CONFIG_GPIO_IMU_DRDY10]) >= 0) {
     digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 1);
-#endif
-    PtpGetUnixTime(&imudrv.tIntrById[id]);
-    imudrv.tIntr1MHzById[id] = SystemGetCounter1MHz();
-    p = &imudrv.sc[id];
-    if(p->pDriver->intr) p->pDriver->intr(id, p);
   }
+#endif
 
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY10);
   return;
 }
 static void
 ImudrvInterruptDrdy11(void)
 {
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY11);
+  return;
+}
+static void
+ImudrvInterruptDrdy12(void)
+{
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY12);
+}
+static void
+ImudrvInterruptDrdy13(void)
+{
+  printf("xxxx intr drdy13 \n");
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY13);
+}
+static void
+ImudrvInterruptDrdy00(void)
+{
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY00);
+}
+static void
+ImudrvInterruptDrdy01(void)
+{
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY01);
+}
+static void
+ImudrvInterruptDrdy02(void)
+{
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY02);
+}
+static void
+ImudrvInterruptDrdy03(void)
+{
+  ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY03);
+}
+static void
+ImudrvInterruptDrdy(int numDrdy)
+{
   struct _stProbedSc    *p;
   int                   id;
 
-  if((id = imudrv.idByIntr[CONFIG_GPIO_IMU_DRDY11]) >= 0) {
+  if((id = imudrv.idByIntr[numDrdy]) >= 0) {
     PtpGetUnixTime(&imudrv.tIntrById[id]);
     imudrv.tIntr1MHzById[id] = SystemGetCounter1MHz();
     p = &imudrv.sc[id];

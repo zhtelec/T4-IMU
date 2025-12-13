@@ -5,7 +5,6 @@
 #include        <stdio.h>
 
 #include        <Arduino.h>
-#include        <SPI.h>
 #include        <QNEthernet.h>
 #include        <InternalTemperature.h>
 
@@ -33,7 +32,7 @@ extern int      imuFmtMulticast;
 static const char *boardName[] = {
   "T4-IMU",
   "T4-PTPGM",
-  "N/A",
+  "T4-SENSECAP",
   "N/A",
   "N/A",
   "N/A",
@@ -81,23 +80,22 @@ TopInit(void)
   NetworkInit();                // network settings
   NetworkInitUdp();
 
-
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_PTPGM) {
+  int           id;
+  id = SystemGetBoardId();
+  if(id == CONFIG_BOARDID_T4_PTPGM) {
     GnssInit();
     GnssdoInit();
-  }
-
-
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
+  } else if(id == CONFIG_BOARDID_T4_IMU) {
     SystemCtrloutInit(0, 20);           // for test
     SystemCtrloutInit(1, 100);          // for test
 
     ImuInit();                          // imu settings
     SdlogInit();
-  }
 
-  //SystemI2cScan(0);
-  //SystemI2cScan(1);
+  } else if(id == CONFIG_BOARDID_T4_SENSECAP) {
+    SystemSpiInit(0);                   // init spi bus0
+    ImuInit();                          // imu settings
+  }
 
   return;
 }
@@ -106,18 +104,20 @@ TopInit(void)
 void
 TopLoop(void)
 {
+  int           id;
   CommandLoop();
   NetworkLoop();
-
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_PTPGM) {
+  id = SystemGetBoardId();
+  if(id == CONFIG_BOARDID_T4_PTPGM) {
     GnssLoop();
     GnssdoLoop();
-  }
-
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
+  } else if(id == CONFIG_BOARDID_T4_IMU) {
     ImuLoop();
     SdlogLoop();
+  } else if(id == CONFIG_BOARDID_T4_SENSECAP) {
+    ImuLoop();
   }
+
 
 #if 0
   static uint32_t       t;

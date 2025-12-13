@@ -229,17 +229,20 @@ ImuSendValue(struct _stImuValue *p)
 
       PacketCalcSumAndFillHeader((struct _stPacketGeneric *)&pkt, sizeof(pkt));
 
+  SystemSetLed0(1);
       NetworkSendUdp((uint8_t *)&pkt, sizeof(pkt));
+  SystemSetLed0(0);
 
-
-      char buf[256];
-      int pos = 0;
-      pos  = sprintf(buf,     "%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
-      pos += sprintf(buf+pos, " %08lx %08lx %d", p->tsChip, p->ts_1MHz, p->id);
-      pos += sprintf(buf+pos, " %f %f %f %f %f %f %.1f\n",
-                     p->axf, p->ayf, p->azf,
-                     p->gxf, p->gyf, p->gzf, p->tempf);
-      SdlogWrite(buf);
+      if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
+        char buf[256];
+        int pos = 0;
+        pos  = sprintf(buf,     "%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
+        pos += sprintf(buf+pos, " %08lx %08lx %d", p->tsChip, p->ts_1MHz, p->id);
+        pos += sprintf(buf+pos, " %f %f %f %f %f %f %.1f\n",
+                       p->axf, p->ayf, p->azf,
+                       p->gxf, p->gyf, p->gzf, p->tempf);
+        SdlogWrite(buf);
+      }
     }
 
 #if     CONFIG_IMU_CALC_TIME_PULSE

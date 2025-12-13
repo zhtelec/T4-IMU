@@ -14,6 +14,7 @@
 #include        <strings.h>
 #include        <math.h>
 #include        <string.h>
+#include        <InternalTemperature.h>
 
 #include        "config.h"
 #include        "system.h"
@@ -483,11 +484,11 @@ GnssdoPid24MHzInit(void)
   p->dac    = p->offset;
   //p->diffRingDepth = CONFIG_GNSSDO_DIFF_HISTORY_LEN_MIN;
   p->diffRingDepth = 4;
-  p->diffRingDepthChgUp   = 16;
-  p->diffRingDepthChgDown = 64;
+  p->diffRingDepthChgUp   = 2;
+  p->diffRingDepthChgDown = 4;
   p->thresholdLock = CONFIG_GNSSDO_LOCK_PPB_24MHZ;
 
-  //p->debug = 1;
+  p->debug = 1;
 
   return;
 }
@@ -522,7 +523,7 @@ GnssdoPid24MHz(int current, int target)
   int           dac;
 
   p = &gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid;
-  dac = GnssdoPid(p, current, target);
+  dac = GnssdoPid(p, current, target, 1);
   if(dac > 65535) dac = 65535;
   if(dac <     0) dac = 0;
   Mcp4726Set(0, dac);
@@ -538,7 +539,7 @@ GnssdoPidVcocxo(int current, int target)
   int           dac;
 
   p = &gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid;
-  dac = GnssdoPid(p, current, target);
+  dac = GnssdoPid(p, current, target, 1);
   if(dac > 65535) dac = 65535;
   if(dac <     0) dac = 0;
   Mcp4726Set(1, dac);
@@ -559,18 +560,20 @@ GnssdoPidGetFreqDifference(int unit)
 
 
 static int
-GnssdoPid(struct _stPid *p, int current, int target)
+GnssdoPid(struct _stPid *p, int current, int target, int pol)
 {
   int           diff, diff128;
   double        ds = 0.0;
   int           dac;
-  int           sum;
   int           update = 0;
 
   dac = p->dac;
 
-  diff = target - current;
-  //diff = -target + current;
+  if(pol > 0) {
+    diff = target - current;
+  } else {
+    diff = -target + current;
+  }
 
   diff128 = diff;
   if(diff128 >  127) diff128 =  127;
@@ -650,6 +653,7 @@ GnssdoPid(struct _stPid *p, int current, int target)
                   target, diff128, p->diffSum,
                   (float)p->diffSum/(float)p->diffRingLen);
 
+    if(p->unit == 0) Serial.printf(", temp:%5.2f", InternalTemperature.readTemperatureC());
     if(p->unit == 1) Serial.printf(", temp:%5.2f", GnssdoTmp112GetTemperature());
     Serial.printf(", dac:%x", dac);
     Serial.printf("\n");

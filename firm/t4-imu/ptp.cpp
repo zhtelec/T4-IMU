@@ -137,7 +137,7 @@ PtpLoop()
   if(ptp.ledTimer &&
      (ptp.ledTimer - SystemGetCounter()) > 100 * SYSTEM_COUNTER_1M000S) {
     ptp.ledTimer = 0;
-    digitalWrite(CONFIG_GPIO_LED, 0);
+    SystemSetLedL(0);
 
   }
 
@@ -199,7 +199,7 @@ PtpInterruptTimer(void)
     }
   }
 
-  digitalWrite(CONFIG_GPIO_LED, 1);
+  SystemSetLedL(1);
   ptp.ledTimer = SystemGetCounter() | 1;
 
   asm("dsb"); // allow write to complete so the interrupt doesn't fire twice

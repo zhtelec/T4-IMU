@@ -235,6 +235,13 @@ static int      ImudrvProbeStub(int bus, struct _stImudrvList *p);
 static int      ImudrvGetInterruptPin(int bus);
 static void     ImudrvInterruptDrdy10(void);
 static void     ImudrvInterruptDrdy11(void);
+static void     ImudrvInterruptDrdy12(void);
+static void     ImudrvInterruptDrdy13(void);
+static void     ImudrvInterruptDrdy00(void);
+static void     ImudrvInterruptDrdy01(void);
+static void     ImudrvInterruptDrdy02(void);
+static void     ImudrvInterruptDrdy03(void);
+static void     ImudrvInterruptDrdy(int numDrdy);
 #endif
 
 

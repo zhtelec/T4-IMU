@@ -46,33 +46,17 @@ SystemPinSettings(void)
   //CCM_ANALOG_PLL_SYS_SS &= ~(1<<15);            // disable Spread spectrum
 
   // port settings
-  pinMode(CONFIG_GPIO_IMUINT0, INPUT_PULLDOWN);
-  pinMode(CONFIG_GPIO_IMUINT1, INPUT_PULLDOWN);
-
-  pinMode(CONFIG_GPIO_LED, OUTPUT);
-  digitalWrite(CONFIG_GPIO_LED, 1);
-
-  pinMode(CONFIG_GPIO_I2C_SDA, INPUT_PULLUP);
-  pinMode(CONFIG_GPIO_I2C_SCL, INPUT_PULLUP);
-  pinMode(CONFIG_GPIO_I2C1_SDA, INPUT_PULLUP);
-  pinMode(CONFIG_GPIO_I2C1_SCL, INPUT_PULLUP);
-
-  pinMode(CONFIG_GPIO_IMU_POWER,  OUTPUT);
-  pinMode(CONFIG_GPIO_IMU_RESETX, OUTPUT);
-  digitalWrite(CONFIG_GPIO_IMU_POWER,  1);
-  digitalWrite(CONFIG_GPIO_IMU_RESETX, 0);
+  pinMode(CONFIG_GPIO_IMU_DRDY10, INPUT_PULLDOWN);
+  pinMode(CONFIG_GPIO_IMU_DRDY11, INPUT_PULLDOWN);
 
   pinMode(CONFIG_GPIO_IMU_CS0X, OUTPUT);
   pinMode(CONFIG_GPIO_IMU_CS1X, OUTPUT);
   //  pinMode(CONFIG_GPIO_IMU_CS2X_FLASH, OUTPUT);
 
-  IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_02    = 0x1;
-  IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_03    = 0x1;
-  IOMUXC_SW_PAD_CTL_PAD_GPIO_AD_B1_12 = 0x1;
+  IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_02    = 0x1;    // GPIO36  SPI1CS0
+  IOMUXC_SW_PAD_CTL_PAD_GPIO_B1_03    = 0x1;    // GPIO37  SPI1CS1
+  IOMUXC_SW_PAD_CTL_PAD_GPIO_AD_B1_12 = 0x1;    // GPIO39  SPI1CS2
 
-
-  digitalWrite(CONFIG_GPIO_IMU_CS0X, 1);
-  digitalWrite(CONFIG_GPIO_IMU_CS1X, 1);
   //digitalWrite(CONFIG_GPIO_IMU_CS2X_FLASH, 1);
 
   // switch and led
@@ -81,11 +65,44 @@ SystemPinSettings(void)
   //pinMode(CONFIG_GPIO_LED0, OUTPUT);
   //digitalWrite(CONFIG_GPIO_LED0, 0);
 
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
-    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
-  }
+  if(boardId == CONFIG_BOARDID_T4_IMU) {
+    digitalWrite(CONFIG_GPIO_IMU_CS0X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS1X, 1);
+    pinMode(CONFIG_GPIO_I2C_SDA, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C_SCL, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C1_SDA, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C1_SCL, INPUT_PULLUP);
 
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_PTPGM) {
+    pinMode(CONFIG_GPIO_IMU_POWER,  OUTPUT);
+    pinMode(CONFIG_GPIO_IMU_RESETX, OUTPUT);
+    digitalWrite(CONFIG_GPIO_IMU_POWER,  1);
+    digitalWrite(CONFIG_GPIO_IMU_RESETX, 0);
+
+    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
+    //pinMode(CONFIG_GPIO_LED, OUTPUT);
+    //digitalWrite(CONFIG_GPIO_LED, 1);
+
+    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
+
+  } else if(boardId == CONFIG_BOARDID_T4_SENSECAP) {
+
+    //IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_08    = 0;
+    //IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_08    = 0x15;
+
+    pinMode(CONFIG_GPIO_IMU_DRDY12, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY13, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY00, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY01, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY02, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY03, INPUT_PULLDOWN);
+
+  } else if(boardId == CONFIG_BOARDID_T4_PTPGM) {
+    // SW
+    digitalWrite(CONFIG_GPIO_IMU_CS0X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS1X, 1);
+    // LED
+    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
+
     // ptp
     pinMode(CONFIG_GPIO_PTP_PPSOUT, OUTPUT);
     digitalWrite(CONFIG_GPIO_PTP_PPSOUT, 0);
@@ -169,23 +186,53 @@ SystemWaitUsCounter(uint32_t tout)
 
 
 SPISettings topSpi1Config(CONFIG_SPI_SPEED_DEFAULT, MSBFIRST, SPI_MODE3);
+uint32_t        systemSpiRecoverTime[2];
 
 int
 SystemSpiInit(int unit)
 {
   int           result = -1;
+  int           port;
 
   if(unit < 0) {
     result = 0;
   } else if(unit == 0) {
+    for(int i = 0; i < 4; i++) {
+      port = SystemSpiGetCsxGpioNum(unit, i);
+      if(port >= 0) {
+        pinMode(port, OUTPUT);
+        digitalWrite(port, 1);
+      }
+    }
+    // spi setting
+    SPI.setSCK (CONFIG_GPIO_IMU_SCK0);
+    SPI.setMOSI(CONFIG_GPIO_IMU_MOSI0);
+    SPI.setMISO(CONFIG_GPIO_IMU_MISO0);
+    SPI.begin();
+
+    SPI.beginTransaction(SPISettings(CONFIG_SPI_SPEED_DEFAULT, MSBFIRST, SPI_MODE3));
+    SPI.transfer(0);           // dummy send
+    SPI.endTransaction();
+
+    result = 0;
+
   } else if(unit == 1) {
-    // cs port settings
-    pinMode(CONFIG_GPIO_IMU_CS0X, OUTPUT);
-    pinMode(CONFIG_GPIO_IMU_CS1X, OUTPUT);
-    //pinMode(CONFIG_GPIO_IMU_CS2X, OUTPUT);
-    digitalWrite(CONFIG_GPIO_IMU_CS0X, 1);
-    digitalWrite(CONFIG_GPIO_IMU_CS1X, 1);
-    //digitalWrite(CONFIG_GPIO_IMU_CS2X, 1);
+    for(int i = 0; i < 2; i++) {
+      port = SystemSpiGetCsxGpioNum(unit, i);
+      if(port >= 0) {
+        pinMode(port, OUTPUT);
+        digitalWrite(port, 1);
+      }
+    }
+    if(SystemGetBoardId() == CONFIG_BOARDID_T4_SENSECAP) {
+      for(int i = 2; i < 3; i++) {
+        port = SystemSpiGetCsxGpioNum(unit, i);
+        if(port >= 0) {
+          pinMode(port, OUTPUT);
+          digitalWrite(port, 1);
+        }
+      }
+    }
 
     // spi setting
     SPI1.setSCK (CONFIG_GPIO_IMU_SCK);
@@ -220,21 +267,25 @@ int
 SystemSpiTransfer(int unit, int cs, const uint8_t *pTx, int lenTx, uint8_t *pRx, int lenRx, struct _stSystemSpiParam *pParam)
 {
   int           result = -1;
-  int           port;
   int           speed = CONFIG_SPI_SPEED_DEFAULT;
+  uint32_t      t;
+
+  if(SystemSpiGetCsxGpioNum(unit, cs) < 0) goto fail;
+
+  t = systemSpiRecoverTime[unit] - SystemGetUsCounter();
+  if(t < CONFIG_SPI_RECOVER_TIME) {
+    SystemWaitUsCounter(CONFIG_SPI_RECOVER_TIME-t);
+  }
+  systemSpiRecoverTime[unit] = SystemGetUsCounter();
+
+  SystemSpiSetCsx(unit, cs, 0);
+  if(unit == 1 && cs == 3) SystemWaitUsCounter(3);      // adhoc: unit1,CS3 needs dly, GPIO15 is changed too slow
+  if(pParam && pParam->tWaitCs) SystemWaitUsCounter(pParam->tWaitCs);
+
+  if(pParam) speed = pParam->speed;
 
   if(unit == 1) {
-    switch(cs) {
-    case        0: port = CONFIG_GPIO_IMU_CS0X; break;
-    case        1: port = CONFIG_GPIO_IMU_CS1X; break;
-    case        2: port = CONFIG_GPIO_IMU_CS2X; break;
-    default:    goto fail;
-    }
 
-    digitalWrite(port, 0);
-    if(pParam && pParam->tWaitCs) SystemWaitUsCounter(pParam->tWaitCs);
-
-    if(pParam) speed = pParam->speed;
     SPI1.beginTransaction(SPISettings(speed, MSBFIRST, SPI_MODE3));
     if(lenTx > 0) SPI1.transfer((void *)pTx, lenTx);
     if(pParam && pParam->tWait && lenRx) SystemWaitUsCounter(pParam->tWait);
@@ -243,15 +294,61 @@ SystemSpiTransfer(int unit, int cs, const uint8_t *pTx, int lenTx, uint8_t *pRx,
 
     result = lenRx;
 
-    if(pParam && pParam->tWaitCs) SystemWaitUsCounter(pParam->tWaitCs);
-    digitalWrite(port, 1);
+  } else if(unit == 0) {
+
+    SPI.beginTransaction(SPISettings(speed, MSBFIRST, SPI_MODE3));
+    if(lenTx > 0) SPI.transfer((void *)pTx, lenTx);
+    if(pParam && pParam->tWait && lenRx) SystemWaitUsCounter(pParam->tWait);
+    SPI.transfer(pRx, lenRx);
+    SPI.endTransaction();
+
+    result = lenRx;
 
   }
+
+  if(pParam && pParam->tWaitCs) SystemWaitUsCounter(pParam->tWaitCs);
+  SystemSpiSetCsx(unit, cs, 1);
 
 fail:
   return result;
 }
+int
+SystemSpiGetCsxGpioNum(int unit, int numCs)
+{
+  int   port = -1;
 
+  if(unit == 1) {
+    switch(numCs) {
+    case        0: port = CONFIG_GPIO_IMU_CS0X; break;
+    case        1: port = CONFIG_GPIO_IMU_CS1X; break;
+    case        2: port = CONFIG_GPIO_IMU_CS2X; break;
+    }
+    if(SystemGetBoardId() == CONFIG_BOARDID_T4_SENSECAP) {
+      if(numCs == 3)  port = CONFIG_GPIO_IMU_CS13X;
+    }
+  } else if(unit == 0) {
+    if(SystemGetBoardId() == CONFIG_BOARDID_T4_SENSECAP) {
+      switch(numCs) {
+      case        0: port = CONFIG_GPIO_IMU_CS00X; break;
+      case        1: port = CONFIG_GPIO_IMU_CS01X; break;
+      case        2: port = CONFIG_GPIO_IMU_CS02X; break;
+      case        3: port = CONFIG_GPIO_IMU_CS03X; break;
+      }
+    }
+  }
+
+  return port;
+}
+int
+SystemSpiSetCsx(int unit, int numCs, int val)
+{
+  int   port = -1;
+
+  port = SystemSpiGetCsxGpioNum(unit, numCs);
+  if(port >= 0) digitalWrite(port, val);
+
+  return port;
+}
 
 int
 SystemI2cInit(int unit)
@@ -765,24 +862,38 @@ SystemCtrloutClearCounter(int unit)
 void
 SystemSetLed0(int on)
 {
-  if(on) {
-    switch(SystemGetBoardId()) {
-    case        CONFIG_BOARDID_T4_IMU:
-      digitalWrite(CONFIG_GPIO_LED0_T4_IMU, 1);
-      break;
-    default:
-      digitalWrite(CONFIG_GPIO_LED0, 1);
-      break;
-    }
-  } else {
-    switch(SystemGetBoardId()) {
-    case        CONFIG_BOARDID_T4_IMU:
-      digitalWrite(CONFIG_GPIO_LED0_T4_IMU, 0);
-      break;
-    default:
-      digitalWrite(CONFIG_GPIO_LED0, 0);
-      break;
-    }
+  int           val;
+
+  val = on? 1: 0;
+
+  switch(SystemGetBoardId()) {
+  case        CONFIG_BOARDID_T4_IMU:
+  case        CONFIG_BOARDID_T4_SENSECAP:
+    digitalWrite(CONFIG_GPIO_LED0_T4_IMU, val);
+    break;
+  default:
+    digitalWrite(CONFIG_GPIO_LED0, val);
+    break;
+  }
+
+  return;
+}
+
+
+void
+SystemSetLedL(int on)
+{
+  int           val;
+
+  val = on? 1: 0;
+
+  switch(SystemGetBoardId()) {
+  case        CONFIG_BOARDID_T4_SENSECAP:
+    digitalWrite(CONFIG_B2_GPIO_LED_L, val);
+    break;
+  default:
+    digitalWrite(CONFIG_GPIO_LED, val);
+    break;
   }
 
   return;

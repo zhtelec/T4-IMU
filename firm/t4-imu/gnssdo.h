@@ -23,7 +23,7 @@ static void             GnssdoPidVcocxoInit(void);
 static void             GnssdoPid24MHz(int current, int target);
 static void             GnssdoPidVcocxo(int current, int target);
 static float            GnssdoPidGetFreqDifference(int unit);
-static int              GnssdoPid(struct _stPid *p, int current, int target);
+static int              GnssdoPid(struct _stPid *p, int current, int target, int pol);
 static void             GnssdoStatistics(int unit, int value);
 static float            GnssdoTmp112GetTemperature(void);
 static void             GnssdoLockLed(void);

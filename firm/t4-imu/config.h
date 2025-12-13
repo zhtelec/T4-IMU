@@ -2,12 +2,12 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202509270"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202512130"
 
 
 // GPIO
-#define CONFIG_GPIO_IMUINT0                     (0)
-#define CONFIG_GPIO_IMUINT1                     (1)
+#define CONFIG_GPIO_IMU_DRDY10                  (0)     // SPI1 CS0X IMU0
+#define CONFIG_GPIO_IMU_DRDY11                  (1)     // SPI1 CS1X IMU1
 #define CONFIG_GPIO_SW0                         (2)
 #define CONFIG_GPIO_SW1                         (3)
 #define CONFIG_GPIO_EN_EXTOUT                   (9)
@@ -23,9 +23,17 @@
 #define CONFIG_GPIO_IMU_CS0X                    (36)
 #define CONFIG_GPIO_IMU_CS1X                    (37)
 #define CONFIG_GPIO_IMU_CS2X                    (38)
+#define CONFIG_GPIO_IMU_CS13X                   (15)    // T4-SENSECAP
 #define CONFIG_GPIO_IMU_CS2X_FLASH              (CONFIG_GPIO_IMU_CS2X)
 #define CONFIG_GPIO_IMU_POWER                   (32)    // spresense POWER
 #define CONFIG_GPIO_IMU_RESETX                  (33)    // spresense XRST
+#define CONFIG_GPIO_IMU_SCK0                    (13)
+#define CONFIG_GPIO_IMU_MOSI0                   (11)
+#define CONFIG_GPIO_IMU_MISO0                   (12)
+#define CONFIG_GPIO_IMU_CS00X                   (14)      // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS01X                   (25)      // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS02X                   (23)      // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS03X                   (22)      // T4-SENSECAP
 
 #define CONFIG_GPIO_LED0_T4_IMU                 (40)
 #define CONFIG_GPIO_LED0_T4_PTPGM               (23)
@@ -43,22 +51,31 @@
 #define CONFIG_GPIO_EN_EXTOCXO                  (42)    // EN_EXTOCXO  0: exist, 1: no
 #define CONFIG_GPIO_SEL_24MHZ                   (43)    // SEL 24MHz/OCXO  0: EXT OCXO, 1: CPU CLOCK 24MHZ
 
-
-#define CONFIG_GPIO_IMU_DRDY10                  (0)     // SPI1 CS0X IMU0
-#define CONFIG_GPIO_IMU_DRDY11                  (1)     // SPI1 CS1X IMU1
+#define CONFIG_GPIO_IMU_DRDY12                  (4)     // SPI1 CS2X IMU2
+#define CONFIG_GPIO_IMU_DRDY13                  (5)     // SPI1 CS3X IMU3
+#define CONFIG_GPIO_IMU_DRDY00                  (6)     // SPI0 CS0X IMU4
+#define CONFIG_GPIO_IMU_DRDY01                  (8)     // SPI0 CS1X IMU5
+#define CONFIG_GPIO_IMU_DRDY02                  (9)     // SPI0 CS2X IMU6
+#define CONFIG_GPIO_IMU_DRDY03                  (10)    // SPI0 CS3X IMU7
+#define CONFIG_B2_GPIO_LED_L                    (41)    // SENSECAP LED L
 
 //#define CONFIG_GPIO_SERIAL1_RXD                 (52)    // orignal is pin 0
 //#define CONFIG_GPIO_SERIAL1_TXD                 (53)    // orignal is pin 1
 #define CONFIG_GPIO_SERIAL2_RXD                 (7)
 #define CONFIG_GPIO_SERIAL2_TXD                 (8)
 
+
 // board id
 #define CONFIG_BOARDID_T4_IMU                   0
 #define CONFIG_BOARDID_T4_PTPGM                 1
+#define CONFIG_BOARDID_T4_SENSECAP              2
+
+
 
 
 // SPI
 #define CONFIG_SPI_SPEED_DEFAULT                (1*1000*1000)
+#define CONFIG_SPI_RECOVER_TIME                 (10*SYSTEM_COUNTER_US1U000S)
 
 
 // I2C
@@ -159,8 +176,7 @@
 
 
 // IMU
-#define CONFIG_SENSOR_NUM_MAX                   4
-#define CONFIG_IMU_M4S_IFUART                   0       // Menphis
+#define CONFIG_SENSOR_NUM_MAX                   8
 #define CONFIG_IMU_CALC_TIME_PULSE              4       // 0: disable otherwise: enable and port
 
 
@@ -189,10 +205,20 @@
 
 #define CONFIG_GNSSDO_VCOCXO_FREQ_TICK          (24.0/1000000.0)
 
+// T4-PTPGM 1.00
+#if 1
 #define CONfIG_GNSSDO_PID_24MHZ_KP              (10.0)
-#define CONfIG_GNSSDO_PID_24MHZ_KI              (0.5)
+#define CONfIG_GNSSDO_PID_24MHZ_KI              (2.0)
 #define CONfIG_GNSSDO_PID_24MHZ_KD              (0.02)
-#define CONfIG_GNSSDO_PID_24MHZ_OFFSET          32768.0
+#define CONfIG_GNSSDO_PID_24MHZ_OFFSET          34300.0
+#endif
+#if 0
+#define CONfIG_GNSSDO_PID_24MHZ_KP              (-10.0)
+#define CONfIG_GNSSDO_PID_24MHZ_KI              (-2.0)
+#define CONfIG_GNSSDO_PID_24MHZ_KD              (-0.02)
+#define CONfIG_GNSSDO_PID_24MHZ_OFFSET          38300.0
+#endif
+
 #define CONfIG_GNSSDO_PID_OCXO_KP               (-300.0)
 #define CONfIG_GNSSDO_PID_OCXO_KI               (-48000.0)
 #define CONfIG_GNSSDO_PID_OCXO_KD               (-10.0)
