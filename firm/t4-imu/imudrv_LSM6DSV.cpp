@@ -153,6 +153,26 @@ loop(int id, struct _stProbedSc *p)
     ImudrvGoCb(id, p, &imu);
   }
 
+
+#if 0
+  static uint32_t       t  = 0;
+  int   len = 32;
+  int   bus = 0x100;
+  if((t - SystemGetCounter()) >= 2*SYSTEM_COUNTER_1S000) {
+    uint8_t     buf[256];
+    t = SystemGetCounter();
+
+    for(int j = 0; j < 4; j = j+ 1) {
+      Serial.printf("IMU%d: ", j);
+      ImudrvSpiReadBus(p->bus & 0x0ff0 * j, 0x80 | 0x00, (unsigned char *)buf, len, &p->spiParam);
+      for(int i = 0; i < len; i = i+ 1) {
+        Serial.printf(" %02x", buf[i]);
+      }
+      Serial.printf("\n");
+    }
+  }
+#endif
+
   return 0;
 }
 

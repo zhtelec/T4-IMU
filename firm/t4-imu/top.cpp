@@ -21,6 +21,7 @@
 #include        "sdlog.h"
 #include        "mcp4726.h"
 #include        "gnssdo.h"
+#include        "fifo.h"
 
 
 #include        "top.h"
@@ -56,6 +57,7 @@ TopInit(void)
   SystemPinSettings();
   Serial.begin(115200);
   SystemWaitCounter(500);
+  FifoInit();
 
   Serial.printf("--------\n# version: %s\n", CONFIG_VERSION_TEXT);
 

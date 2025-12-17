@@ -2,7 +2,7 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202512130"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202512170"
 
 
 // GPIO
@@ -69,6 +69,11 @@
 #define CONFIG_BOARDID_T4_IMU                   0
 #define CONFIG_BOARDID_T4_PTPGM                 1
 #define CONFIG_BOARDID_T4_SENSECAP              2
+#define CONFIG_BOARDID_T4_ID3                   3
+#define CONFIG_BOARDID_T4_ID4                   4
+#define CONFIG_BOARDID_T4_ID5                   5
+#define CONFIG_BOARDID_T4_ID6                   6
+#define CONFIG_BOARDID_T4_ID7                   7
 
 
 
@@ -173,11 +178,21 @@
 #define CONFIG_MULTICAST_PORT                   23901
 #define CONFIG_NETWORK_HOSTNAME_T4_IMU          "t4-imu"
 #define CONFIG_NETWORK_HOSTNAME_T4_PTPGM        "t4-ptpgm"
+#define CONFIG_NETWORK_HOSTNAME_T4_SENSECAP     "t4-sensecap"
+#define CONFIG_NETWORK_HOSTNAME_T4_ID3          "id3"
+#define CONFIG_NETWORK_HOSTNAME_T4_ID4          "id4"
+#define CONFIG_NETWORK_HOSTNAME_T4_ID5          "id5"
+#define CONFIG_NETWORK_HOSTNAME_T4_ID6          "id6"
+#define CONFIG_NETWORK_HOSTNAME_T4_ID7          "id7"
 
 
 // IMU
 #define CONFIG_SENSOR_NUM_MAX                   8
 #define CONFIG_IMU_CALC_TIME_PULSE              4       // 0: disable otherwise: enable and port
+#define CONFIG_SENSOR_USE_FIFO                  1
+#define CONFIG_SENSOR_FIFO_USE_MALLOC           1
+#define CONFIG_SENSOR_FIFO_SIZE                 9       // 2^x
+#define CONFIG_SENSOR_FIFO_THRESHOLD            20      //
 
 
 // GNSS

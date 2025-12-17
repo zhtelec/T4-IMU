@@ -228,6 +228,7 @@ int             ImudrvI2cSetConfig(int id, const uint8_t *ptr, int count);
 float           ImudrvConvTmprFloat(int id, int32_t val);
 uint32_t        ImudrvGetDataRate(int id);
 
+int             ImudrvGetNumOfSensors(void);
 
 
 #ifdef  __IMUDRV_CPP__

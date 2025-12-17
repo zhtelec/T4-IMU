@@ -13,19 +13,30 @@
 #include        "network.h"
 #include        "packet.h"
 #include        "sdlog.h"
+#include        "fifo.h"
 
 #include        "imu.h"
 
-//namespace               qn = qindesign::network;
+struct _stImu {
+  int           numOfSensors;
 
-extern IPAddress        servIP;
-extern uint16_t         servPort;
+  int           imuFmtUart;
+  int           imuFmtIp;
 
-int                     imuFmtUart      = IMUDRV_FORMAT_DISABLE;
-int                     imuFmtIp        = IMUDRV_FORMAT_FLOAT;
+  int           dFifo;
+#if CONFIG_SENSOR_FIFO_USE_MALLOC
+  uint8_t       bufFifo[2^CONFIG_SENSOR_FIFO_SIZE];
+#endif
 
-static int              debug = 0;
+  int           debug = 0;
 #define IMU_DEBUG_SHOW_ALL      (1<<0)
+};
+struct _stImu           imu;
+
+
+int              imuFmtUart;
+int              imuFmtIp;
+
 
 
 void
@@ -33,18 +44,33 @@ ImuInit(void)
 {
   uint32_t      val;
 
+  memset(&imu, 0, sizeof(imu));
+  imu.dFifo             = -1;
+  imu.imuFmtUart        = IMUDRV_FORMAT_DISABLE;
+  imu.imuFmtIp          = IMUDRV_FORMAT_FLOAT;
+
   digitalWrite(CONFIG_GPIO_IMU_POWER,  1);
   SystemWaitUsCounter(1000 * SYSTEM_COUNTER_US1U000S);
   digitalWrite(CONFIG_GPIO_IMU_RESETX, 1);
   SystemWaitUsCounter(150 * SYSTEM_COUNTER_US1M000S);
+
+#if CONFIG_SENSOR_FIFO_USE_MALLOC
+  imu.dFifo = FifoCreate(CONFIG_SENSOR_FIFO_SIZE);
+#else
+  imu.dFifo = FifoCreateWithBuf(CONFIG_SENSOR_FIFO_SIZE, imu.bufFifo);
+#endif
 
   ImudrvInit(-1, 0, 0, 0, 0);
   ImudrvProbe();
   ImudrvSetCb(ImuSendValue);
 
   val = EepromGet16(CONFIG_EEPROM_IMU_PARAM_POS);
-  imuFmtUart       = (val >> CONFIG_EEPROM_IMU_PARAM_UART_SHIFT)      & 0x3;
-  imuFmtIp         = (val >> CONFIG_EEPROM_IMU_PARAM_IP_SHIFT) & 0x3;
+  imu.imuFmtUart       = (val >> CONFIG_EEPROM_IMU_PARAM_UART_SHIFT)      & 0x3;
+  imu.imuFmtIp         = (val >> CONFIG_EEPROM_IMU_PARAM_IP_SHIFT) & 0x3;
+  imuFmtUart = imu.imuFmtUart;
+  imuFmtIp   = imu.imuFmtIp;
+
+  imu.numOfSensors = ImudrvGetNumOfSensors();
 
   return;
 }
@@ -53,7 +79,19 @@ ImuInit(void)
 void
 ImuLoop(void)
 {
+  uint8_t     buf[512];
+  int         size = 0;
+
   ImudrvLoop();
+
+#if CONFIG_SENSOR_USE_FIFO
+  if(FifoGetDirtyLen(imu.dFifo) >= CONFIG_SENSOR_FIFO_THRESHOLD * imu.numOfSensors) {
+    size = FifoReadOut(imu.dFifo, buf, sizeof(buf));
+    if(size > 0)  {
+      NetworkSendUdp(buf, size);
+    }
+  }
+#endif
 
   return;
 }
@@ -181,9 +219,9 @@ ImuCommand(int ac, char *av[])
 
   } else if(!strcmp(av[1], "show")) {
     if(av[2][0] == '1') {
-      debug |=  IMU_DEBUG_SHOW_ALL;
+      imu.debug |=  IMU_DEBUG_SHOW_ALL;
     } else {
-      debug &= ~IMU_DEBUG_SHOW_ALL;
+      imu.debug &= ~IMU_DEBUG_SHOW_ALL;
     }
   }
 
@@ -202,9 +240,9 @@ static void
 ImuSendValue(struct _stImuValue *p)
 {
   if(p->ts.tv_sec >= 5) {
+    if(imu.imuFmtIp == IMUDRV_FORMAT_S16) {
 
-    if(imuFmtIp == IMUDRV_FORMAT_S16) {
-    } else if(imuFmtIp == IMUDRV_FORMAT_FLOAT) {
+    } else if(imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
       struct _stPacketImuFloat  pkt;
 
       // header
@@ -229,9 +267,11 @@ ImuSendValue(struct _stImuValue *p)
 
       PacketCalcSumAndFillHeader((struct _stPacketGeneric *)&pkt, sizeof(pkt));
 
-  SystemSetLed0(1);
+#if CONFIG_SENSOR_USE_FIFO
+      FifoWriteIn(imu.dFifo, (uint8_t *)&pkt, sizeof(pkt));
+#else
       NetworkSendUdp((uint8_t *)&pkt, sizeof(pkt));
-  SystemSetLed0(0);
+#endif
 
       if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
         char buf[256];
@@ -249,8 +289,8 @@ ImuSendValue(struct _stImuValue *p)
     digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 0);
 #endif
 
-    if(debug & IMU_DEBUG_SHOW_ALL) {
-      if(imuFmtUart == IMUDRV_FORMAT_S16 || imuFmtIp == IMUDRV_FORMAT_S16) {
+    if(imu.debug & IMU_DEBUG_SHOW_ALL) {
+      if(imu.imuFmtUart == IMUDRV_FORMAT_S16 || imu.imuFmtIp == IMUDRV_FORMAT_S16) {
 
         Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
         Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
@@ -258,7 +298,7 @@ ImuSendValue(struct _stImuValue *p)
                       p->ax & 0xffff, p->ay & 0xffff, p->az & 0xffff,
                       p->gx & 0xffff, p->gy & 0xffff, p->gz & 0xffff,  p->temp & 0xffff);
 
-      } else if(imuFmtUart == IMUDRV_FORMAT_FLOAT || imuFmtIp == IMUDRV_FORMAT_FLOAT) {
+      } else if(imu.imuFmtUart == IMUDRV_FORMAT_FLOAT || imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
         Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
         Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
         Serial.printf("  %5d %5d %5d (mm/s^2)  %6d %6d %6d (mdeg/s) %d (mDegC)\n",

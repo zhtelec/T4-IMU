@@ -167,9 +167,10 @@ ImudrvProbe(void)
             Serial.printf("#       intr line: %d\n", intr);
             pSc->intrPort = intr;
             imudrv.idByIntr[intr] = id;
+
+            id++;
           }
 
-          id++;
           //break;
         }
       }
@@ -367,6 +368,7 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
     p->ts      = imudrv.tIntrById[id];            // fill timestamp
     p->ts_1MHz = imudrv.tIntr1MHzById[id];        // fill internal 1MHz timestamp
 
+#if 1
     if(!(p->flag & IMUDRV_FLAG_FILLED_FLOAT) &&
        ((imuFmtUart == IMUDRV_FLAG_FILLED_FLOAT) || (imuFmtIp == IMUDRV_FLAG_FILLED_FLOAT))) {
       p->axf =  (float)p->ax * pSc->accelFactor;
@@ -378,9 +380,8 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
       p->gzf =  (float)p->gz * pSc->gyroFactor;
 
       p->tempf = pSc->tempOffset + (float)p->temp * pSc->tempMul;
-    }
 
-    if(!(p->flag & IMUDRV_FLAG_FILLED_S16)) {
+    } else if(!(p->flag & IMUDRV_FLAG_FILLED_S16)) {
       p->ax =  0;
       p->ay =  0;
       p->az =  0;
@@ -390,7 +391,22 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
       p->gz =  0;
 
       p->temp = 0;
+
     }
+#endif
+#if 0
+    if(p->flag & IMUDRV_FLAG_FILLED_S16) {
+      p->axf =  (float)p->ax * pSc->accelFactor;
+      p->ayf =  (float)p->ay * pSc->accelFactor;
+      p->azf =  (float)p->az * pSc->accelFactor;
+
+      p->gxf =  (float)p->gx * pSc->gyroFactor;
+      p->gyf =  (float)p->gy * pSc->gyroFactor;
+      p->gzf =  (float)p->gz * pSc->gyroFactor;
+
+      p->tempf = pSc->tempOffset + (float)p->temp * pSc->tempMul;
+    }
+#endif
 
     imudrv.pCb(p);
   }
@@ -526,7 +542,7 @@ ImudrvGetInterruptPin(int bus)
   int           intr = -1;
 
   switch(bus) {
-  case  0x0010:        // I2C0 0x10
+  case  0x0010:        // I2C0 0x10             // spresense imu adhoc
   case  0x1100:        // SPI1 CS0X
     intr = CONFIG_GPIO_IMU_DRDY10; break;
   case  0x1101:        // SPI1 CS1X
@@ -577,7 +593,6 @@ ImudrvInterruptDrdy12(void)
 static void
 ImudrvInterruptDrdy13(void)
 {
-  printf("xxxx intr drdy13 \n");
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY13);
 }
 static void
@@ -614,4 +629,11 @@ ImudrvInterruptDrdy(int numDrdy)
   }
 
   return;
+}
+
+
+int
+ImudrvGetNumOfSensors(void)
+{
+  return imudrv.cntProbedSc;
 }

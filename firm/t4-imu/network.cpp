@@ -50,8 +50,14 @@ NetworkInit(void)
   // Setup networking
   qn::Ethernet.macAddress(mac);
   switch(SystemGetBoardId()) {
-  case  CONFIG_BOARDID_T4_IMU:   qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_IMU);   break;
-  case  CONFIG_BOARDID_T4_PTPGM: qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_PTPGM); break;
+  case  CONFIG_BOARDID_T4_IMU:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_IMU);   break;
+  case  CONFIG_BOARDID_T4_PTPGM:     qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_PTPGM); break;
+  case  CONFIG_BOARDID_T4_SENSECAP:  qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_SENSECAP); break;
+  case  CONFIG_BOARDID_T4_ID3:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID3);   break;
+  case  CONFIG_BOARDID_T4_ID4:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID4);   break;
+  case  CONFIG_BOARDID_T4_ID5:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID5);   break;
+  case  CONFIG_BOARDID_T4_ID6:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID6);   break;
+  case  CONFIG_BOARDID_T4_ID7:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID7);   break;
   }
 
   if(ipflag & CONFIG_EEPROM_IPFLAG_STATIC_MASK) {
