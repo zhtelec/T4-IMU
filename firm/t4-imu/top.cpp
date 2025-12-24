@@ -22,6 +22,7 @@
 #include        "mcp4726.h"
 #include        "gnssdo.h"
 #include        "fifo.h"
+#include        "debug.h"
 
 
 #include        "top.h"
@@ -55,8 +56,15 @@ TopInit(void)
 
   // port settings
   SystemPinSettings();
+  SystemSetLedL(1);
   Serial.begin(115200);
+  if(SystemGetBoardId() == CONFIG_BOARDID_T4_SENSECAP) {
+    Serial5.begin(115200);
+    Serial7.begin(115200);
+  }
+
   SystemWaitCounter(500);
+  SystemSetPowerEn(1);
   FifoInit();
 
   Serial.printf("--------\n# version: %s\n", CONFIG_VERSION_TEXT);
@@ -84,20 +92,25 @@ TopInit(void)
 
   int           id;
   id = SystemGetBoardId();
-  if(id == CONFIG_BOARDID_T4_PTPGM) {
-    GnssInit();
-    GnssdoInit();
-  } else if(id == CONFIG_BOARDID_T4_IMU) {
+
+  if(id == CONFIG_BOARDID_T4_IMU) {
     SystemCtrloutInit(0, 20);           // for test
     SystemCtrloutInit(1, 100);          // for test
 
     ImuInit();                          // imu settings
     SdlogInit();
 
+  } else if(id == CONFIG_BOARDID_T4_PTPGM) {
+    GnssInit();
+    GnssdoInit();
+
   } else if(id == CONFIG_BOARDID_T4_SENSECAP) {
     SystemSpiInit(0);                   // init spi bus0
     ImuInit();                          // imu settings
+
   }
+
+  DebugInit();
 
   return;
 }
@@ -107,18 +120,21 @@ void
 TopLoop(void)
 {
   int           id;
+
   CommandLoop();
   NetworkLoop();
   id = SystemGetBoardId();
-  if(id == CONFIG_BOARDID_T4_PTPGM) {
-    GnssLoop();
-    GnssdoLoop();
-  } else if(id == CONFIG_BOARDID_T4_IMU) {
+  if(id == CONFIG_BOARDID_T4_IMU) {
     ImuLoop();
     SdlogLoop();
+  } else if(id == CONFIG_BOARDID_T4_PTPGM) {
+    GnssLoop();
+    GnssdoLoop();
   } else if(id == CONFIG_BOARDID_T4_SENSECAP) {
     ImuLoop();
   }
+
+  DebugLoop();
 
 
 #if 0

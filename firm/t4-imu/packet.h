@@ -7,11 +7,12 @@ struct _stPacketHeader {
   uint16_t              len;            // total packet size
   uint8_t               sum;            // calc all byte (include sum) is 0
   uint8_t               type;           // 1: imu data S16, 2: imu data float
-#define PACKET_TYPE_IMU_S16             0x11
-#define PACKET_TYPE_IMU_FLOAT           0x12
-#define PACKET_TYPE_GNSS_PPS            0x20
-#define PACKET_TYPE_GNSS_INT64          0x21
-#define PACKET_TYPE_XXX                 0xf0
+#define PACKET_TYPE_IMU_S16             CONFIG_SENSOR_TYPE_IMU_S16
+#define PACKET_TYPE_IMU_FLOAT           CONFIG_SENSOR_TYPE_IMU_FLOAT
+#define PACKET_TYPE_MAGNETIC_FLOAT      CONFIG_SENSOR_TYPE_MAGNETIC_FLOAT
+#define PACKET_TYPE_GNSS_PPS            CONFIG_SENSOR_TYPE_GNSS_PPS
+#define PACKET_TYPE_GNSS_INT64          CONFIG_SENSOR_TYPE_GNSS_INT64
+#define PACKET_TYPE_XXX                 CONFIG_SENSOR_TYPE_XXX
 
   uint16_t              reserved1;
 

@@ -10,6 +10,7 @@
 #include        "imudrv.h"
 
 #define PARAM_CHIPNAME                  "ICM45686"
+#define PARAM_TYPE                      ((IMUDRV_TYPE_DEV_IMU))
 #define PARAM_CHIPID_ADDR               0x72
 #define PARAM_CHIPID_VALUE              0xe9
 #define PARAM_SPI_FREQ_IN_KHZ           24000
@@ -34,14 +35,14 @@ const static uint8_t    probePatternList[] = {
 static int
 probe(int bus)
 {
-  int           result = IMUDRV_ERRNO_NOMATCH;
+  int           result = IMUDRV_ERRNO_NEEDNEXTCHECK;
 
   return result;
 }
 
 
 static int
-init(int id, int powermode, int accfsr, int gyrfsr, int odr)
+init(int id, struct _stProbedSc *p, int powermode, int accfsr, int gyrfsr, int odr)
 {
     int         result = IMUDRV_ERRNO_UNKNOWN;
 
@@ -103,17 +104,14 @@ init(int id, int powermode, int accfsr, int gyrfsr, int odr)
     }
     buff[1] |= c;
 
-    struct _stProbedSc *p;
-    p = &imudrv.sc[id];
-
     p->accelFactor = 4.0 * IMUDRV_GRAVITY / (32768.0*256.0) * (float)(1 << accfsr);
     p->gyroFactor  =       500.0   / (32768.0*256.0) * (float)(1 << gyrfsr);
     p->tempDiv     = PARAM_TEMPERATURE_DIV;
     p->tempMul     = 1/PARAM_TEMPERATURE_DIV;
     p->tempOffset  = PARAM_TEMPERATURE_OFFSET;
 
-    ImudrvSpiSetConfig(id, (uint8_t *)buff, 2);
-    ImudrvSpiSetConfig(id, (uint8_t *)settings, sizeof(settings)/2);
+    ImudrvSetConfigSc(p, (uint8_t *)buff, 2);
+    ImudrvSetConfigSc(p, (uint8_t *)settings, sizeof(settings)/2);
 
     result = IMUDRV_SUCCESS;
 
@@ -131,17 +129,18 @@ loop(int id, struct _stProbedSc *p)
     p->intrDet = 0;
 
     // the read transaction has one dummy byte bwt command and data/
-    ImudrvSpiReadBus(p->bus & 0x0fff, PARAM_DATA_POSITION | 0x80, buf, PARAM_DATA_LENGTH+1, &p->spiParam);
+    ImudrvReadSc(p, PARAM_DATA_POSITION, buf, PARAM_DATA_LENGTH+1);
 
     imu.id = id;
 
     strcpy((char *)imu.name, PARAM_CHIPNAME);
+    imu.type   = PARAM_TYPE;
 
-    imu.flag  = IMUDRV_FLAG_FILLED_S16;
+    imu.flag   = IMUDRV_FLAG_FILLED_S16;
 
-    imu.ax    = ((buf[ 1] << 8) & 0xff00) | (buf[ 0] & 0xff);
-    imu.ay    = ((buf[ 3] << 8) & 0xff00) | (buf[ 2] & 0xff);
-    imu.az    = ((buf[ 5] << 8) & 0xff00) | (buf[ 4] & 0xff);
+    imu.ax     = ((buf[ 1] << 8) & 0xff00) | (buf[ 0] & 0xff);
+    imu.ay     = ((buf[ 3] << 8) & 0xff00) | (buf[ 2] & 0xff);
+    imu.az     = ((buf[ 5] << 8) & 0xff00) | (buf[ 4] & 0xff);
 
     imu.gx     = ((buf[ 7] << 8) & 0xff00) | (buf[ 6] & 0xff);
     imu.gy     = ((buf[ 9] << 8) & 0xff00) | (buf[ 8] & 0xff);
@@ -161,7 +160,7 @@ loop(int id, struct _stProbedSc *p)
 
 
 static int
-start(int id, int odr)
+start(int id, struct _stProbedSc *p, int odr)
 {
     uint8_t     buff[2];
 
@@ -170,21 +169,21 @@ start(int id, int odr)
 
     buff[0] = 0x10; //PWR_MGMT0
     buff[1] = 0x0f; //low noise
-    ImudrvSpiSetConfig(id, buff, 1);
+    ImudrvSetConfigSc(p, buff, 1);
 
     return 0;
 }
 
 
 static int
-stop(int id)
+stop(int id, struct _stProbedSc *p)
 {
-    uint8_t     buff[2];
+  uint8_t     buff[2];
 
     buff[0] = 0x10; //PWR_MGMT0
     buff[1] = 0x00; //off
 
-    ImudrvSpiSetConfig(id, buff, 1);
+    ImudrvSetConfigSc(p, buff, 1);
 
     return 0;
 }
@@ -218,6 +217,7 @@ intr(int id, struct _stProbedSc *p)
 struct _stImudrvList imudrvList_ICM45686 = {
   // device name
   .name =               "ICM45686",
+  .type =               PARAM_TYPE,
 
   // register pattern table
   .cntPatternList =     sizeof(probePatternList),

@@ -10,6 +10,7 @@
 #include        "imudrv.h"
 
 #define PARAM_CHIPNAME                  "LSM6DSV"
+#define PARAM_TYPE                      ((IMUDRV_TYPE_DEV_IMU))
 #define PARAM_CHIPID_ADDR               0x0f
 #define PARAM_CHIPID_VALUE              0x70
 #define PARAM_SPI_FREQ_IN_KHZ           10000
@@ -34,14 +35,14 @@ const static uint8_t    probePatternList[] = {
 static int
 probe(int bus)
 {
-  int           result = IMUDRV_ERRNO_NOMATCH;
+  int           result = IMUDRV_ERRNO_NEEDNEXTCHECK;
 
   return result;
 }
 
 
 static int
-init(int id, int powermode, int accfsr, int gyrfsr, int odr)
+init(int id, struct _stProbedSc *p, int powermode, int accfsr, int gyrfsr, int odr)
 {
     int           result = IMUDRV_ERRNO_UNKNOWN;
 
@@ -58,7 +59,7 @@ init(int id, int powermode, int accfsr, int gyrfsr, int odr)
       0x50, 0x40,               // FUNC_EN: ts enable
     };
 
-    ImudrvSpiSetConfig(id, settings, sizeof(settings)/2);
+    ImudrvSetConfigSc(p, settings, sizeof(settings)/2);
 
 
     buff[0] = 0x10; // CTRL1  accel odr
@@ -100,16 +101,13 @@ init(int id, int powermode, int accfsr, int gyrfsr, int odr)
         case IMUDRV_ACCFSR_16G: buff[7] = 0x03;                break; // +-16G
     }
 
-    struct _stProbedSc *p;
-    p = &imudrv.sc[id];
-
     p->accelFactor = 4.0 * IMUDRV_GRAVITY / (32768.0*256.0) * (float)(1 << accfsr);
     p->gyroFactor  =       500.0   / (32768.0*256.0) * (float)(1 << gyrfsr);
     p->tempDiv     = PARAM_TEMPERATURE_DIV;
     p->tempMul     = 1/PARAM_TEMPERATURE_DIV;
     p->tempOffset  = PARAM_TEMPERATURE_OFFSET;
 
-    ImudrvSpiSetConfig(id, (uint8_t *)buff, 4);
+    ImudrvSetConfigSc(p, (uint8_t *)buff, 4);
 
     result = IMUDRV_SUCCESS;
 
@@ -126,11 +124,12 @@ loop(int id, struct _stProbedSc *p)
   if(p->intrDet) {
     p->intrDet = 0;
 
-    ImudrvSpiReadBus(p->bus & 0x0fff, PARAM_DATA_POSITION | 0x80, buf, PARAM_DATA_LENGTH, &p->spiParam);
+    ImudrvReadSc(p, PARAM_DATA_POSITION, buf, PARAM_DATA_LENGTH);
 
     imu.id = id;
 
     strcpy((char *)imu.name, PARAM_CHIPNAME);
+    imu.type   = PARAM_TYPE;
 
     imu.flag   = IMUDRV_FLAG_FILLED_S16;
 
@@ -145,7 +144,7 @@ loop(int id, struct _stProbedSc *p)
     imu.temp   = ((buf[ 1] << 8) & 0xff00) | (buf[ 0] & 0xff);
 
     imu.tsChip = 0;
-    ImudrvSpiReadBus(p->bus & 0x0fff, 0x40 | 0x80, buf, 4, &p->spiParam);
+    ImudrvReadSc(p, 0x40, buf, 4);
     imu.tsChip = ((buf[2] << 16) & 0xff0000) | ((buf[1] << 8) & 0xff00) | (buf[0] & 0xff);
 
     //Serial.printf("%x %x %x %x   %x %x %x  %x\n", imu.tsChip, imu.ax, imu.ay, imu.az, imu.gx, imu.gy, imu.gz, imu.temp);
@@ -164,7 +163,7 @@ loop(int id, struct _stProbedSc *p)
 
     for(int j = 0; j < 4; j = j+ 1) {
       Serial.printf("IMU%d: ", j);
-      ImudrvSpiReadBus(p->bus & 0x0ff0 * j, 0x80 | 0x00, (unsigned char *)buf, len, &p->spiParam);
+      ImudrvReadBus(p->bus & 0x0ff0 * j, 0x80 | 0x00, (unsigned char *)buf, len, p);
       for(int i = 0; i < len; i = i+ 1) {
         Serial.printf(" %02x", buf[i]);
       }
@@ -178,7 +177,7 @@ loop(int id, struct _stProbedSc *p)
 
 
 static int
-start(int id, int odr)
+start(int id, struct _stProbedSc *p, int odr)
 {
 
     return 0;
@@ -186,7 +185,7 @@ start(int id, int odr)
 
 
 static int
-stop(int id)
+stop(int id, struct _stProbedSc *p)
 {
 
     return 0;
@@ -223,6 +222,7 @@ intr(int id, struct _stProbedSc *p)
 struct _stImudrvList imudrvList_LSM6DSV = {
   // device name
   .name =               PARAM_CHIPNAME,
+  .type =               PARAM_TYPE,
 
   // register pattern table
   .cntPatternList =     sizeof(probePatternList),

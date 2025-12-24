@@ -68,6 +68,10 @@ extern int              imuFmtIp;
 
 struct _stImudrv             imudrv;
 
+static const uint8_t    txtIMU[] = "IMU";
+static const uint8_t    txtMAG[] = "MAG";
+static const uint8_t    txtUKN[] = "UKN";
+
 
 //*************************************************************************
 //
@@ -83,6 +87,8 @@ int
 ImudrvProbe(void)
 {
   int                           result = IMUDRV_ERRNO_NOMATCH;
+  int         re;
+
   struct _stImudrvList          *p;
   int                           id = 0;
   struct _stSystemSpiParam      spiParam;
@@ -101,16 +107,16 @@ ImudrvProbe(void)
       //  1 SPI     busNUm   cs num     (CS0X -- CS15X)
       int               bus;
       for(bus = 0; bus < 0x2000; bus++) {
-        if(bus < 0x0100) {       // if = I2C0
+        if(bus < 0x0200) {       // if = I2C0, 1
 
           if((bus & 0xff) < 0x80) {
             result = ImudrvProbeStub(bus, p);
 
           } else {
-            bus = 0xff;
+            bus += 0x7f;
           }
 
-        } else if(bus < 0x1000) {       // if = I2C1, 2, 3
+        } else if(bus < 0x1000) {       // if = I2C2, 3
           result = IMUDRV_ERRNO_UNKNOWN;
           bus = 0xfff;   // skip
 
@@ -120,15 +126,24 @@ ImudrvProbe(void)
           if((bus & 0x00ff) >= 15) bus |= 0xff;
         }
 
-
         if(result == IMUDRV_SUCCESS) {
+          uint8_t       type;
+          type          = ImudrvGetTypeDev(p->type);
+
+
           if(((bus >> 12) & 0xf) == 1) {
-            Serial.printf("# IMU%d: SPI%d CS%x device %s\n",
-                          id, (bus >> 8) & 0xf, bus & 0xff, p->name);
+            Serial.printf("# id%d: %s%d (%x-%d) SPI%d CS%x device %s\n",
+                          id, ImudrvGetSensorTypeTxt(type), imudrv.subIdInType[type],
+                          type, imudrv.subIdInType[type],
+                          (bus >> 8) & 0xf, bus & 0xff, p->name);
           } else if(((bus >> 12) & 0xf) == 0) {
-            Serial.printf("# IMU%d: I2C%d(0x%02x), device %s\n",
-                          id, (bus >> 8) & 0xf, bus & 0xff, p->name);
+            Serial.printf("# id%d: %s%d (%x-%d) I2C%d(0x%02x), device %s\n",
+                          id, ImudrvGetSensorTypeTxt(type), imudrv.subIdInType[type],
+                          type, imudrv.subIdInType[type],
+                          (bus >> 8) & 0xf, bus & 0xff, p->name);
           }
+
+
 
           uint32_t      val;
           int           accfsr, gyrfsr, odr /*fmtUart, fmtIp*/;
@@ -154,24 +169,43 @@ ImudrvProbe(void)
           int                         intr;
           pSc = &imudrv.sc[id];
           pSc->id      = id;
+          pSc->subId   = imudrv.subIdInType[type]++;   // copy and increment
           pSc->bus     = bus;
           pSc->pDriver = p;
-          ImudrvInit(id,
-                     0,                         // power mode
-                     pSc->accfsr,       // accfsr
-                     pSc->gyrfsr,       // gyrfsr
-                     pSc->odr           // odr
-                     );
+          re = ImudrvInit(id,
+                          0,                 // power mode
+                          pSc->accfsr,       // accfsr
+                          pSc->gyrfsr,       // gyrfsr
+                          pSc->odr           // odr
+                          );
+          if(re < 0) continue;
+
+#if 0
+          if(((bus >> 12) & 0xf) == 1) {
+            Serial.printf("# id%d: %s%d (%x-%d) SPI%d CS%x device %s\n",
+                          id, ImudrvGetSensorTypeTxt(type), imudrv.subIdInType[type],
+                          type, imudrv.subIdInType[type],
+                          (bus >> 8) & 0xf, bus & 0xff, p->name);
+          } else if(((bus >> 12) & 0xf) == 0) {
+            Serial.printf("# id%d: %s%d (%x-%d) I2C%d(0x%02x), device %s\n",
+                          id, ImudrvGetSensorTypeTxt(type), imudrv.subIdInType[type],
+                          type, imudrv.subIdInType[type],
+                          (bus >> 8) & 0xf, bus & 0xff, p->name);
+          }
+#endif
 
           if((intr = ImudrvGetInterruptPin(bus)) >= 0) {
             Serial.printf("#       intr line: %d\n", intr);
             pSc->intrPort = intr;
             imudrv.idByIntr[intr] = id;
 
-            id++;
+            ImudrvEnableInterrupt(intr);
+            pSc->intrDet = 1;
+
           }
 
-          //break;
+          id++;                 // inc for next device
+
         }
       }
 
@@ -200,6 +234,12 @@ ImudrvProbeStub(int bus, struct _stImudrvList *p)
   uint8_t       bufRx[32];
   int           match;
   //uint8_t       addr;
+
+  re = p->probe(bus);
+  if(re < 0) {
+    result = IMUDRV_ERRNO_NOMATCH;
+    goto fail;
+  }
 
   pPat   = p->pPatternList;
   cntPat = p->cntPatternList;
@@ -236,6 +276,7 @@ ImudrvProbeStub(int bus, struct _stImudrvList *p)
     }
   }
 
+fail:
   return result;
 
 }
@@ -252,33 +293,16 @@ ImudrvInit(int id, int powermode, int accfsr, int gyrfsr, int odr)
   if(id < 0) {
     memset(&imudrv, 0, sizeof(imudrv));
     memset(imudrv.idByIntr, 0xff, sizeof(imudrv.idByIntr));
-#if 0
-    // fill the invalid value
-    for(int i = 0; i < sizeof(imudrv.valueList)/sizeof(int16_t); i++) {
-      imudrv.valueList[i] = IMUDRV_VALUE_INVALID;
-    }
-    imudrv.pImudrvList = imudrvList;
-    imudrv.spiSpeed = CONFIG_IMUSPI_SPEED_DEFAULT;
-#endif
-
-    attachInterrupt(CONFIG_GPIO_IMU_DRDY10, ImudrvInterruptDrdy10, RISING);
-    attachInterrupt(CONFIG_GPIO_IMU_DRDY11, ImudrvInterruptDrdy11, RISING);
-    if(SystemGetBoardId() == CONFIG_BOARDID_T4_SENSECAP) {
-      attachInterrupt(CONFIG_GPIO_IMU_DRDY12, ImudrvInterruptDrdy12, RISING);
-      attachInterrupt(CONFIG_GPIO_IMU_DRDY13, ImudrvInterruptDrdy13, RISING);
-      attachInterrupt(CONFIG_GPIO_IMU_DRDY00, ImudrvInterruptDrdy00, RISING);
-      attachInterrupt(CONFIG_GPIO_IMU_DRDY01, ImudrvInterruptDrdy01, RISING);
-      attachInterrupt(CONFIG_GPIO_IMU_DRDY02, ImudrvInterruptDrdy02, RISING);
-      attachInterrupt(CONFIG_GPIO_IMU_DRDY03, ImudrvInterruptDrdy03, RISING);
-    }
 
   } else {
 
     struct _stProbedSc          *p;
     p = &imudrv.sc[id];
     if(p->pDriver->init) {
-      Serial.printf("# IMU%d: init acc=%d, gry=%d, odr=%d\n", id, accfsr, gyrfsr, odr);
-      result = p->pDriver->init(id, powermode, accfsr, gyrfsr, odr);
+      if(ImudrvGetTypeDev(p->pDriver->type) == IMUDRV_TYPE_DEV_IMU) {
+        Serial.printf("#       init acc=%d, gry=%d, odr=%d\n", id, accfsr, gyrfsr, odr);
+      }
+      result = p->pDriver->init(id, p, powermode, accfsr, gyrfsr, odr);
     }
 
   }
@@ -308,7 +332,7 @@ ImudrvStart(int id, int odr)
   struct _stProbedSc          *pSc;
   pSc = &imudrv.sc[id];
 
-  if(pSc->pDriver->start) result = pSc->pDriver->start(id, odr);
+  if(pSc->pDriver->start) result = pSc->pDriver->start(id, pSc, odr);
 
   return result;
 }
@@ -321,7 +345,7 @@ ImudrvStop(int id)
   struct _stProbedSc          *pSc;
   pSc = &imudrv.sc[id];
 
-  if(pSc->pDriver->stop) result = pSc->pDriver->stop(id);
+  if(pSc->pDriver->stop) result = pSc->pDriver->stop(id, pSc);
 
   return result;
 }
@@ -364,11 +388,17 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
 
     p->seq     = pSc->seq++;
     p->id      = pSc->id;
+    p->subId   = pSc->subId;
 
-    p->ts      = imudrv.tIntrById[id];            // fill timestamp
-    p->ts_1MHz = imudrv.tIntr1MHzById[id];        // fill internal 1MHz timestamp
+    if(ImudrvGetInterruptPin(pSc->bus) >= 0) {
+      p->ts      = imudrv.tIntrById[id];            // fill timestamp
+      p->ts_1MHz = imudrv.tIntr1MHzById[id];        // fill internal 1MHz timestamp
+    } else {
+      PtpGetUnixTime(&p->ts);
+      p->ts_1MHz = SystemGetCounter1MHz();
+    }
 
-#if 1
+    // fill float data, if it is not exist
     if(!(p->flag & IMUDRV_FLAG_FILLED_FLOAT) &&
        ((imuFmtUart == IMUDRV_FLAG_FILLED_FLOAT) || (imuFmtIp == IMUDRV_FLAG_FILLED_FLOAT))) {
       p->axf =  (float)p->ax * pSc->accelFactor;
@@ -381,7 +411,9 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
 
       p->tempf = pSc->tempOffset + (float)p->temp * pSc->tempMul;
 
-    } else if(!(p->flag & IMUDRV_FLAG_FILLED_S16)) {
+    }
+    // fill S16 data, if it is not exist
+    if(!(p->flag & IMUDRV_FLAG_FILLED_S16)) {
       p->ax =  0;
       p->ay =  0;
       p->az =  0;
@@ -393,20 +425,6 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
       p->temp = 0;
 
     }
-#endif
-#if 0
-    if(p->flag & IMUDRV_FLAG_FILLED_S16) {
-      p->axf =  (float)p->ax * pSc->accelFactor;
-      p->ayf =  (float)p->ay * pSc->accelFactor;
-      p->azf =  (float)p->az * pSc->accelFactor;
-
-      p->gxf =  (float)p->gx * pSc->gyroFactor;
-      p->gyf =  (float)p->gy * pSc->gyroFactor;
-      p->gzf =  (float)p->gz * pSc->gyroFactor;
-
-      p->tempf = pSc->tempOffset + (float)p->temp * pSc->tempMul;
-    }
-#endif
 
     imudrv.pCb(p);
   }
@@ -416,40 +434,62 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
 
 
 int
-ImudrvSpiReadBus(int bus, int addr, uint8_t *ptr, int len, struct _stSystemSpiParam *pParam)
+ImudrvReadSc(struct _stProbedSc *p, int addr, uint8_t *ptr, int len)
 {
-  int           re;
-  uint8_t       buf[4];
+  int           re = -1;
 
-  if(addr >= 0) {
-    buf[0] = addr | 0x80;
-    re = SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 1, ptr, len, pParam);
-  } else {
-    // recv without pos tx
-    re = SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, NULL, 0, ptr, len, pParam);
+#if 0
+  uint8_t       buf[4];
+  int           iface, num, slave;
+
+  iface =  p->bus & IMUDRV_BUS_IF_MASK;
+  num   = (p->bus & IMUDRV_BUS_NUM_MASK) >> IMUDRV_BUS_NUM_POS;
+  slave = (p->bus & IMUDRV_BUS_SLAVE_MASK) >> IMUDRV_BUS_SLAVE_POS;
+
+  if(iface == (IMUDRV_BUS_IF_I2C)) {
+    buf[0] = addr;
+    re = SystemI2cTransfer(num, slave, buf, 1, ptr, len, &p->i2cParam);
+
+  } else if(iface == (IMUDRV_BUS_IF_SPI)) {
+    if(addr >= 0) {
+      buf[0] = addr | 0x80;
+      re = SystemSpiTransfer(num, slave, buf, 1, ptr, len, &p->spiParam);
+    } else {
+      // recv without pos tx
+      re = SystemSpiTransfer(num, slave, NULL, 0, ptr, len, &p->spiParam);
+    }
   }
+#endif
+
+  re = ImudrvReadBus(p->bus, addr, ptr, len, p);
 
   return re;
 }
 int
-ImudrvSpiRead(int id, int addr, uint8_t *ptr, int len)
+ImudrvReadBus(int bus, int addr, uint8_t *ptr, int len, struct _stProbedSc *p)
 {
-  int                   re;
-  int                   bus;
-  struct _stProbedSc    *pSc;
-  uint8_t               buf[32];
+  int           re = -1;
+  uint8_t       buf[4];
 
-  pSc = &imudrv.sc[id];
-  bus = pSc->bus;
+  if((bus & IMUDRV_BUS_IF_MASK) == (IMUDRV_BUS_IF_I2C)) {
+    buf[0] = addr;
+    re = SystemI2cTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 1, ptr, len, &p->i2cParam);
 
-  buf[0] = addr | 0x80;
-
-
-  re = SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 1, ptr, len, &pSc->spiParam);
+  } else if((bus & IMUDRV_BUS_IF_MASK) == (IMUDRV_BUS_IF_SPI)) {
+    if(addr >= 0) {
+      buf[0] = addr | 0x80;
+      re = SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 1, ptr, len, &p->spiParam);
+    } else {
+      // recv without pos tx
+      re = SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, NULL, 0, ptr, len, &p->spiParam);
+    }
+  }
 
   return re;
 }
 
+
+#if 0
 int
 ImudrvSpiWrite(int id, int addr, uint8_t *ptr, int len)
 {
@@ -468,24 +508,81 @@ ImudrvSpiWrite(int id, int addr, uint8_t *ptr, int len)
 
   return len;
 }
+#endif
 
 
 int
-ImudrvSpiWriteNoAddr(int id, uint8_t *ptr, int len)
+ImudrvSetConfigSc(struct _stProbedSc *p, const uint8_t *ptr, int count)
 {
-  SystemSpiTransfer(1, 0, ptr, len, NULL, 0, NULL);
-
-  return len;
+  return ImudrvSetConfigBus(p->bus, ptr, count);
 }
-
 int
-ImudrvSpiSetConfigBus(int bus, const uint8_t *ptr, int count)
+ImudrvSetConfigBus(int bus, const uint8_t *ptr, int count)
 {
+  uint8_t       buf[2];
+
   for(int i = 0; i < count; i++) {
     if(*ptr == 0xff) {
       SystemWaitCounter(ptr[1]);
     } else {
-      SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, ptr, 2, NULL, 0, NULL);
+      buf[0] = ptr[0];
+      buf[1] = ptr[1];
+      switch(bus & IMUDRV_BUS_IF_MASK) {
+        //case IMUDRV_BUS_IF_I2C: SystemI2cTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, &p->i2cParam); break;
+        //case IMUDRV_BUS_IF_SPI: SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, &p->spiParam); break;
+      case IMUDRV_BUS_IF_I2C: SystemI2cTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, NULL); break;
+      case IMUDRV_BUS_IF_SPI: SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, NULL); break;
+      }
+    }
+    ptr += 2;
+  }
+
+  return count;
+}
+int
+ImudrvSetConfig16Sc(struct _stProbedSc *p, const uint8_t *ptr, int count)
+{
+  return ImudrvSetConfig16Bus(p->bus, ptr, count, NULL);
+}
+int
+ImudrvSetConfig16Bus(int bus, const uint8_t *ptr, int count, void *pParam)
+{
+  uint8_t       buf[2];
+
+  for(int i = 0; i < count; i++) {
+    if(*ptr == 0xff) {
+      SystemWaitCounter(ptr[1]);
+    } else {
+      buf[0] = ptr[0];
+      buf[1] = ptr[1];
+      buf[2] = ptr[2];
+      switch(bus & IMUDRV_BUS_IF_MASK) {
+        //case IMUDRV_BUS_IF_I2C: SystemI2cTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, &p->i2cParam); break;
+        //case IMUDRV_BUS_IF_SPI: SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, &p->spiParam); break;
+      case IMUDRV_BUS_IF_I2C: SystemI2cTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 3, NULL, 0, pParam); break;
+      case IMUDRV_BUS_IF_SPI: SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 3, NULL, 0, pParam); break;
+      }
+    }
+    ptr += 3;
+  }
+
+  return count;
+}
+
+
+#if 0
+int
+ImudrvSpiSetConfigBus(int bus, const uint8_t *ptr, int count)
+{
+  uint8_t       buf[2];
+
+  for(int i = 0; i < count; i++) {
+    if(*ptr == 0xff) {
+      SystemWaitCounter(ptr[1]);
+    } else {
+      buf[0] = ptr[0];
+      buf[1] = ptr[1];
+      SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, NULL);
     }
     ptr += 2;
   }
@@ -495,8 +592,9 @@ ImudrvSpiSetConfigBus(int bus, const uint8_t *ptr, int count)
 int
 ImudrvSpiSetConfig(int id, const uint8_t *ptr, int count)
 {
-  int   bus;
+  int           bus;
   struct _stProbedSc          *pSc;
+  uint8_t       buf[2];
 
   pSc = &imudrv.sc[id];
   bus = pSc->bus;
@@ -505,35 +603,16 @@ ImudrvSpiSetConfig(int id, const uint8_t *ptr, int count)
     if(ptr[0] == 0xff) {
       SystemWaitCounter(ptr[1]);
     } else {
-      SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, ptr, 2, NULL, 0, &pSc->spiParam);
+      buf[0] = ptr[0];
+      buf[1] = ptr[1];
+      SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, &pSc->spiParam);
     }
     ptr += 2;
   }
 
   return count;
 }
-
-
-int
-ImudrvI2cSetConfig(int id, const uint8_t *ptr, int count)
-{
-  int   bus;
-  struct _stProbedSc          *pSc;
-
-  pSc = &imudrv.sc[id];
-  bus = pSc->bus;
-
-  for(int i = 0; i < count; i++) {
-    if(ptr[0] == 0xff) {
-      SystemWaitCounter(ptr[1]);
-    } else {
-      SystemI2cTransfer((bus >> 8) & 0xf, bus & 0xff, ptr, 2, NULL, 0, &pSc->i2cParam);
-    }
-    ptr += 2;
-  }
-
-  return count;
-}
+#endif
 
 
 static int
@@ -565,12 +644,42 @@ ImudrvGetInterruptPin(int bus)
 }
 
 
+int
+ImudrvEnableInterrupt(int intr)
+{
+  void (*entry)() = NULL;
+
+  switch(intr) {
+  case  CONFIG_GPIO_IMU_DRDY10: entry = ImudrvInterruptDrdy10; break;
+  case  CONFIG_GPIO_IMU_DRDY11: entry = ImudrvInterruptDrdy11; break;
+  case  CONFIG_GPIO_IMU_DRDY12: entry = ImudrvInterruptDrdy12; break;
+  case  CONFIG_GPIO_IMU_DRDY13: entry = ImudrvInterruptDrdy13; break;
+  case  CONFIG_GPIO_IMU_DRDY00: entry = ImudrvInterruptDrdy00; break;
+  case  CONFIG_GPIO_IMU_DRDY01: entry = ImudrvInterruptDrdy01; break;
+  case  CONFIG_GPIO_IMU_DRDY02: entry = ImudrvInterruptDrdy02; break;
+  case  CONFIG_GPIO_IMU_DRDY03: entry = ImudrvInterruptDrdy03; break;
+  }
+
+  if(entry != NULL) {
+    attachInterrupt(intr, entry, RISING);
+  }
+
+  return -1;
+}
+int
+ImudrvDisableInterrupt(int intr)
+{
+  detachInterrupt(intr);
+
+  return 0;
+}
+
+
 static void
 ImudrvInterruptDrdy10(void)
 {
 
 #if     CONFIG_IMU_CALC_TIME_PULSE
-  int                   id;
   if((imudrv.idByIntr[CONFIG_GPIO_IMU_DRDY10]) >= 0) {
     digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 1);
   }
@@ -636,4 +745,19 @@ int
 ImudrvGetNumOfSensors(void)
 {
   return imudrv.cntProbedSc;
+}
+
+
+static const uint8_t *
+ImudrvGetSensorTypeTxt(uint8_t type)
+{
+  const uint8_t       *p;
+
+  switch(type) {
+  case        IMUDRV_TYPE_DEV_IMU:        p = txtIMU; break;
+  case        IMUDRV_TYPE_DEV_MAGNETICS:  p = txtMAG; break;
+  default:                                p = txtUKN; break;
+  }
+
+  return p;
 }

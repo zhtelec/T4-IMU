@@ -62,8 +62,9 @@ SystemPinSettings(void)
   // switch and led
   pinMode(CONFIG_GPIO_SW0,  INPUT_PULLUP);
   pinMode(CONFIG_GPIO_SW1,  INPUT_PULLUP);
-  //pinMode(CONFIG_GPIO_LED0, OUTPUT);
-  //digitalWrite(CONFIG_GPIO_LED0, 0);
+
+  pinMode(CONFIG_GPIO_IMU_POWER,  OUTPUT);
+  digitalWrite(CONFIG_GPIO_IMU_POWER, 0);
 
   if(boardId == CONFIG_BOARDID_T4_IMU) {
     digitalWrite(CONFIG_GPIO_IMU_CS0X, 1);
@@ -73,28 +74,13 @@ SystemPinSettings(void)
     pinMode(CONFIG_GPIO_I2C1_SDA, INPUT_PULLUP);
     pinMode(CONFIG_GPIO_I2C1_SCL, INPUT_PULLUP);
 
-    pinMode(CONFIG_GPIO_IMU_POWER,  OUTPUT);
     pinMode(CONFIG_GPIO_IMU_RESETX, OUTPUT);
-    digitalWrite(CONFIG_GPIO_IMU_POWER,  1);
     digitalWrite(CONFIG_GPIO_IMU_RESETX, 0);
 
     pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
-    //pinMode(CONFIG_GPIO_LED, OUTPUT);
-    //digitalWrite(CONFIG_GPIO_LED, 1);
+    pinMode(CONFIG_GPIO_LED, OUTPUT);
 
     pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
-
-  } else if(boardId == CONFIG_BOARDID_T4_SENSECAP) {
-
-    //IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_08    = 0;
-    //IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_08    = 0x15;
-
-    pinMode(CONFIG_GPIO_IMU_DRDY12, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY13, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY00, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY01, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY02, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY03, INPUT_PULLDOWN);
 
   } else if(boardId == CONFIG_BOARDID_T4_PTPGM) {
     // SW
@@ -102,6 +88,7 @@ SystemPinSettings(void)
     digitalWrite(CONFIG_GPIO_IMU_CS1X, 1);
     // LED
     pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
+    pinMode(CONFIG_GPIO_LED, OUTPUT);
 
     // ptp
     pinMode(CONFIG_GPIO_PTP_PPSOUT, OUTPUT);
@@ -149,6 +136,25 @@ SystemPinSettings(void)
 
     pinMode(CONFIG_GPIO_EN_EXTOCXO, INPUT_PULLUP);
     pinMode(CONFIG_GPIO_SEL_24MHZ, OUTPUT);
+
+  } else if(boardId == CONFIG_BOARDID_T4_SENSECAP) {
+
+    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
+
+    pinMode(CONFIG_GPIO_I2C_SDA,  INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C_SCL,  INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C1_SDA, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C1_SCL, INPUT_PULLUP);
+
+    pinMode(CONFIG_GPIO_IMU_DRDY12, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY13, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY00, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY01, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY02, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY03, INPUT_PULLDOWN);
+
+    pinMode(CONFIG_B2_GPIO_LED_L, OUTPUT);
+
   }
 
   return;
@@ -370,7 +376,9 @@ int
 SystemI2cTransfer(int unit, int addr, const uint8_t *pTx, int lenTx, uint8_t *pRx, int lenRx, struct _stSystemI2cParam *pParam)
 {
   int           result = -1;
+  int           re;
   TwoWire       *pWire = NULL;
+  uint8_t       c;
 
   if(unit == 0) {
     pWire = &Wire;
@@ -383,20 +391,25 @@ SystemI2cTransfer(int unit, int addr, const uint8_t *pTx, int lenTx, uint8_t *pR
     pWire->write(pTx, lenTx);
 
     if(lenRx == 0) {
-      pWire->endTransmission(true);
+      re = pWire->endTransmission(true);
+      if (re != 0) goto fail;
 
     } else {
       pWire->endTransmission(false);
+      if (re != 0) goto fail;
 
-      pWire->requestFrom(addr, lenRx, true);
-      while (pWire->available()) {
-        *pRx++ = pWire->read();
+      pWire->requestFrom(addr, lenRx);
+
+      for(int i = 0; i < lenRx; i++) {
+        c = pWire->read();
+        *pRx++ = c;
       }
     }
 
     result = lenRx;
   }
 
+fail:
   return result;
 }
 
@@ -895,6 +908,18 @@ SystemSetLedL(int on)
     digitalWrite(CONFIG_GPIO_LED, val);
     break;
   }
+
+  return;
+}
+
+
+void
+SystemSetPowerEn(int on)
+{
+  int           val;
+
+  val = on? 1: 0;
+  digitalWrite(CONFIG_GPIO_IMU_POWER,  val);
 
   return;
 }

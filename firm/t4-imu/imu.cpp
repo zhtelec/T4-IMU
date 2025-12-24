@@ -44,7 +44,7 @@ ImuInit(void)
 {
   uint32_t      val;
 
-  memset(&imu, 0, sizeof(imu));
+  memset((void *)&imu, 0, sizeof(imu));
   imu.dFifo             = -1;
   imu.imuFmtUart        = IMUDRV_FORMAT_DISABLE;
   imu.imuFmtIp          = IMUDRV_FORMAT_FLOAT;
@@ -86,7 +86,7 @@ ImuLoop(void)
 
 #if CONFIG_SENSOR_USE_FIFO
   if(FifoGetDirtyLen(imu.dFifo) >= CONFIG_SENSOR_FIFO_THRESHOLD * imu.numOfSensors) {
-    size = FifoReadOut(imu.dFifo, buf, sizeof(buf));
+    size = FifoReadOut(imu.dFifo, (char *)buf, sizeof(buf));
     if(size > 0)  {
       NetworkSendUdp(buf, size);
     }
@@ -240,72 +240,144 @@ static void
 ImuSendValue(struct _stImuValue *p)
 {
   if(p->ts.tv_sec >= 5) {
-    if(imu.imuFmtIp == IMUDRV_FORMAT_S16) {
+    switch(ImudrvGetTypeDev(p->type)) {
+    case      IMUDRV_TYPE_DEV_MAGNETICS: ImuSendValueMagnetics(p); break;
+    case      IMUDRV_TYPE_DEV_IMU:       ImuSendValueImu(p);       break;
+    //default:                             ImuSendValueImu(p);       break;
+    }
+  }
 
-    } else if(imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
-      struct _stPacketImuFloat  pkt;
+  return;
+}
 
-      // header
-      pkt.hdr.type     = PACKET_TYPE_IMU_FLOAT;
-      pkt.hdr.id       = p->id;
-      pkt.hdr.seq      = p->seq;
-      //pkt.hdr.len      = sizeof(pkt);
-      pkt.hdr.tai_secH = (p->ts.tv_sec >> 32) & 0xff;
-      pkt.hdr.tai_sec  =  p->ts.tv_sec;
-      pkt.hdr.tai_nsec =  p->ts.tv_nsec;
-      pkt.hdr.ts_1MHz  = SystemGetCounter1MHz();
 
-      // data
-      pkt.acc[0]  = p->axf;
-      pkt.acc[1]  = p->ayf;
-      pkt.acc[2]  = p->azf;
-      pkt.gyr[0]  = p->gxf;
-      pkt.gyr[1]  = p->gyf;
-      pkt.gyr[2]  = p->gzf;
-      pkt.temp    = p->tempf;
-      pkt.tsChip  = p->tsChip;
+static void
+ImuSendValueImu(struct _stImuValue *p)
+{
+  if(imu.imuFmtIp == IMUDRV_FORMAT_S16) {
 
-      PacketCalcSumAndFillHeader((struct _stPacketGeneric *)&pkt, sizeof(pkt));
+  } else if(imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
+    struct _stPacketImuFloat  pkt;
+
+    // header
+    pkt.hdr.type     = PACKET_TYPE_IMU_FLOAT;
+    pkt.hdr.id       = p->subId;
+    pkt.hdr.seq      = p->seq;
+    //pkt.hdr.len      = sizeof(pkt);
+    pkt.hdr.tai_secH = (p->ts.tv_sec >> 32) & 0xff;
+    pkt.hdr.tai_sec  =  p->ts.tv_sec;
+    pkt.hdr.tai_nsec =  p->ts.tv_nsec;
+    pkt.hdr.ts_1MHz  = SystemGetCounter1MHz();
+
+    // data
+    pkt.acc[0]  = p->axf;
+    pkt.acc[1]  = p->ayf;
+    pkt.acc[2]  = p->azf;
+    pkt.gyr[0]  = p->gxf;
+    pkt.gyr[1]  = p->gyf;
+    pkt.gyr[2]  = p->gzf;
+    pkt.temp    = p->tempf;
+    pkt.tsChip  = p->tsChip;
+
+    PacketCalcSumAndFillHeader((struct _stPacketGeneric *)&pkt, sizeof(pkt));
 
 #if CONFIG_SENSOR_USE_FIFO
-      FifoWriteIn(imu.dFifo, (uint8_t *)&pkt, sizeof(pkt));
+    FifoWriteIn(imu.dFifo, (char *)&pkt, sizeof(pkt));
 #else
-      NetworkSendUdp((uint8_t *)&pkt, sizeof(pkt));
+    NetworkSendUdp((uint8_t *)&pkt, sizeof(pkt));
 #endif
 
-      if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
-        char buf[256];
-        int pos = 0;
-        pos  = sprintf(buf,     "%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
-        pos += sprintf(buf+pos, " %08lx %08lx %d", p->tsChip, p->ts_1MHz, p->id);
-        pos += sprintf(buf+pos, " %f %f %f %f %f %f %.1f\n",
-                       p->axf, p->ayf, p->azf,
-                       p->gxf, p->gyf, p->gzf, p->tempf);
-        SdlogWrite(buf);
-      }
+    if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU) {
+      char buf[256];
+      int pos = 0;
+      pos  = sprintf(buf,     "%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
+      pos += sprintf(buf+pos, " %08lx %08lx %d", p->tsChip, p->ts_1MHz, p->id);
+      pos += sprintf(buf+pos, " %f %f %f %f %f %f %.1f\n",
+                     p->axf, p->ayf, p->azf,
+                     p->gxf, p->gyf, p->gzf, p->tempf);
+      SdlogWrite(buf);
     }
+  }
 
 #if     CONFIG_IMU_CALC_TIME_PULSE
-    digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 0);
+  digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 0);
 #endif
 
-    if(imu.debug & IMU_DEBUG_SHOW_ALL) {
-      if(imu.imuFmtUart == IMUDRV_FORMAT_S16 || imu.imuFmtIp == IMUDRV_FORMAT_S16) {
+  if(imu.debug & IMU_DEBUG_SHOW_ALL) {
+    if(imu.imuFmtUart == IMUDRV_FORMAT_S16 || imu.imuFmtIp == IMUDRV_FORMAT_S16) {
 
-        Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
-        Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
-        Serial.printf("  %04x %04x %04x  %04x %04x %04x  %04x\n",
-                      p->ax & 0xffff, p->ay & 0xffff, p->az & 0xffff,
-                      p->gx & 0xffff, p->gy & 0xffff, p->gz & 0xffff,  p->temp & 0xffff);
+      Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
+      Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
+      Serial.printf("  %04x %04x %04x  %04x %04x %04x  %04x\n",
+                    p->ax & 0xffff, p->ay & 0xffff, p->az & 0xffff,
+                    p->gx & 0xffff, p->gy & 0xffff, p->gz & 0xffff,  p->temp & 0xffff);
 
-      } else if(imu.imuFmtUart == IMUDRV_FORMAT_FLOAT || imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
-        Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
-        Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
-        Serial.printf("  %5d %5d %5d (mm/s^2)  %6d %6d %6d (mdeg/s) %d (mDegC)\n",
-                      (int)(p->axf*1000), (int)(p->ayf*1000), (int)(p->azf*1000),
-                      (int)(p->gxf*1000), (int)(p->gyf*1000), (int)(p->gzf*1000), (int)(p->tempf*1000));
+    } else if(imu.imuFmtUart == IMUDRV_FORMAT_FLOAT || imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
+      float val;
+      Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
+      Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
+      Serial.printf("  %5d %5d %5d (mm/s^2)  %6d %6d %6d (mdeg/s) %d (mDegC)",
+                    (int)(p->axf*1000), (int)(p->ayf*1000), (int)(p->azf*1000),
+                    (int)(p->gxf*1000), (int)(p->gyf*1000), (int)(p->gzf*1000), (int)(p->tempf*1000));
+      val = p->axf*p->axf + p->ayf*p->ayf+ p->azf*p->azf;
+      Serial.printf(" %f (m/s^2)\n", sqrt(val));
 
-      }
+    }
+  }
+
+  return;
+}
+
+
+static void
+ImuSendValueMagnetics(struct _stImuValue *p)
+{
+  if(imu.imuFmtIp == IMUDRV_FORMAT_S16) {
+  } else if(imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
+    struct _stPacketImuFloat  pkt;
+
+    // header
+    pkt.hdr.type     = PACKET_TYPE_MAGNETIC_FLOAT;
+    pkt.hdr.id       = p->subId;
+    pkt.hdr.seq      = p->seq;
+    //pkt.hdr.len      = sizeof(pkt);
+    pkt.hdr.tai_secH = (p->ts.tv_sec >> 32) & 0xff;
+    pkt.hdr.tai_sec  =  p->ts.tv_sec;
+    pkt.hdr.tai_nsec =  p->ts.tv_nsec;
+    pkt.hdr.ts_1MHz  = SystemGetCounter1MHz();
+
+    // data
+    pkt.acc[0]  = p->axf;
+    pkt.acc[1]  = p->ayf;
+    pkt.acc[2]  = p->azf;
+    pkt.gyr[0]  = p->gxf;
+    pkt.gyr[1]  = p->gyf;
+    pkt.gyr[2]  = p->gzf;
+    pkt.temp    = p->tempf;
+    pkt.tsChip  = p->tsChip;
+
+    PacketCalcSumAndFillHeader((struct _stPacketGeneric *)&pkt, sizeof(pkt));
+
+#if CONFIG_SENSOR_USE_FIFO
+    FifoWriteIn(imu.dFifo, (char *)&pkt, sizeof(pkt));
+#else
+    NetworkSendUdp((uint8_t *)&pkt, sizeof(pkt));
+#endif
+
+  }
+
+#if     CONFIG_IMU_CALC_TIME_PULSE
+  digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 0);
+#endif
+
+  if(imu.debug & IMU_DEBUG_SHOW_ALL) {
+    if(imu.imuFmtUart == IMUDRV_FORMAT_FLOAT || imu.imuFmtIp == IMUDRV_FORMAT_FLOAT) {
+      Serial.printf("%09lld.%09ld", p->ts.tv_sec, p->ts.tv_nsec);
+      Serial.printf("  %8lx %8lx %2d", p->tsChip, p->ts_1MHz, p->id);
+      Serial.printf("  %5d %5d %5d (uT)  %d (mDegC)\n",
+                    (int)(p->axf*1000000), (int)(p->ayf*1000000), (int)(p->azf*1000000),
+                    (int)(p->tempf*1000));
+
     }
   }
 

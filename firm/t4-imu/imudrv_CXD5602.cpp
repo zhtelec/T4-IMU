@@ -9,9 +9,13 @@
 
 #include        "imudrv.h"
 
+#define CHECK_INTR_POLLING      1
+
+
 static int      start(int id, int odr);
 
 #define PARAM_CHIPNAME                  "CXD5602"
+#define PARAM_TYPE                      ((IMUDRV_TYPE_DEV_IMU))
 #define PARAM_CHIPID_ADDR0              0x15
 #define PARAM_CHIPID_VALUE0_0           1
 #define PARAM_CHIPID_ADDR1              0x17
@@ -103,26 +107,32 @@ probe(int bus)
 {
   int           result = IMUDRV_ERRNO_NOMATCH;
 
+  // avaiable only I2C 0x10 i/f
+  if((bus & IMUDRV_BUS_IF_MASK)    != IMUDRV_BUS_IF_I2C) goto fail;
+  if((bus & IMUDRV_BUS_SLAVE_MASK) != 0x10) goto fail;
+
+  result = IMUDRV_ERRNO_NEEDNEXTCHECK;
+
+fail:
   return result;
 }
 
 
+static const uint8_t  settings[] = {
+  CXD5602PWBIMU_FIFO_THRESH,        1,
+  CXD5602PWBIMU_INTR_ENABLE,        1,
+  CXD5602PWBIMU_OUTPUT_ENABLE,      OUTPUT_ENABLE,
+};
 static int
-init(int id, int powermode, int accfsr, int gyrfsr, int odr)
+init(int id, struct _stProbedSc *p, int powermode, int accfsr, int gyrfsr, int odr)
 {
     int         result = IMUDRV_ERRNO_UNKNOWN;
 
     uint8_t     buff[16];
     uint32_t    c;
-    //uint8_t gyr_enable = register_get_value(REG_IMU_CHOICE);
+    uint8_t     fsr, odrval;
 
-    const uint8_t  settings[] = {
-      CXD5602PWBIMU_FIFO_THRESH,        1,
-      CXD5602PWBIMU_INTR_ENABLE,        1,
-      CXD5602PWBIMU_OUTPUT_ENABLE,      OUTPUT_ENABLE,
-    };
-
-    uint8_t    fsr = 0, odrval;
+    fsr = 0;
     switch(odr){
         default:
         case IMUDRV_ODR_100HZ:  c = ODR_120HZ; odr = IMUDRV_ODR_100HZ; break; //  125Hz
@@ -152,16 +162,10 @@ init(int id, int powermode, int accfsr, int gyrfsr, int odr)
     }
     fsr |= c;
 
-    struct _stProbedSc *p;
-    p = &imudrv.sc[id];
-
     p->accelFactor = 1.0;
     p->gyroFactor  = 1.0;
 
 #if 0
-    p->accelFactor = 4.0 * IMUDRV_GRAVITY / (32768.0*256.0) * (float)(1 << accfsr);
-    p->gyroFactor  =       500.0   / (32768.0*256.0) * (float)(1 << gyrfsr);
-
     p->tempDiv     = PARAM_TEMPERATURE_DIV;
     p->tempMul     = 1/PARAM_TEMPERATURE_DIV;
     p->tempOffset  = PARAM_TEMPERATURE_OFFSET;
@@ -172,25 +176,30 @@ init(int id, int powermode, int accfsr, int gyrfsr, int odr)
     buff[2] = CXD5602PWBIMU_ODR;
     buff[3] = odrval;
 
-    ImudrvI2cSetConfig(id, (uint8_t *)&buff[0], 1);  // set fsr
-    ImudrvI2cSetConfig(id, (uint8_t *)&buff[2], 1);  // set odr
+    ImudrvSetConfigSc(p, (uint8_t *)&buff[0], 1);  // set fsr
+    ImudrvSetConfigSc(p, (uint8_t *)&buff[2], 1);  // set odr
     for(int i = 0; i < (int)sizeof(settings); i+=2) {
-      ImudrvI2cSetConfig(id, (uint8_t *)&settings[i], 1);
+      ImudrvSetConfigSc(p, (uint8_t *)&settings[i], 1);
     }
+
+    Serial.printf("        data if: SPI1 CS0\n");
 
     result = IMUDRV_SUCCESS;
 
     return result;
 }
 
-
 static int
 loop(int id, struct _stProbedSc *p)
 {
-  uint8_t               buf[64];
+  uint32_t              buf[64];
   struct _stImuValue    imu;
 
-  if(p->intrDet || digitalRead(p->intrPort)) {
+  if(p->intrDet
+#if CHECK_INTR_POLLING
+     || digitalRead(p->intrPort)
+#endif
+     ) {
     p->intrDet = 0;
 
 #if     CONFIG_IMU_CALC_TIME_PULSE
@@ -201,29 +210,37 @@ loop(int id, struct _stProbedSc *p)
     int bus = 0x1100;
     memset(buf, 0, PARAM_DATA_LENGTH);
     buf[0] = 0x80;
-    ImudrvSpiReadBus(bus & 0x0fff, -1, buf, PARAM_DATA_LENGTH, &p->spiParam);
+    ImudrvReadBus(bus, -1, (uint8_t *)buf, PARAM_DATA_LENGTH, p);
+
+#if CHECK_INTR_POLLING
+    uint32_t    val;
+    val = buf[0] & buf[1] & buf[2] & buf[3] &buf[4] & buf[5] &buf[6] & buf[7];
+    if(val == 0xffffffff) goto end;
+#endif
 
 #if     CONFIG_IMU_CALC_TIME_PULSE
     digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 1);
 #endif
 
     imu.id = id;
+    imu.type = PARAM_TYPE;
 
     strcpy((char *)imu.name, PARAM_CHIPNAME);
+    imu.type = IMUDRV_TYPE_DEV_IMU;
 
     imu.flag = IMUDRV_FLAG_FILLED_FLOAT;
 
-    imu.axf = *(float *) &buf[20];
-    imu.ayf = *(float *) &buf[24];
-    imu.azf = *(float *) &buf[28];
+    imu.axf = *(float *) &buf[5];
+    imu.ayf = *(float *) &buf[6];
+    imu.azf = *(float *) &buf[7];
 
-    imu.gxf = *(float *) &buf[ 8] * 180.0 / PI;
-    imu.gyf = *(float *) &buf[12] * 180.0 / PI;
-    imu.gzf = *(float *) &buf[16] * 180.0 / PI;
+    imu.gxf = *(float *) &buf[2] * 180.0 / PI;
+    imu.gyf = *(float *) &buf[3] * 180.0 / PI;
+    imu.gzf = *(float *) &buf[4] * 180.0 / PI;
 
-    imu.tempf = *(float *) &buf[4];
+    imu.tempf = *(float *) &buf[1];
 
-    imu.tsChip = ((buf[3] << 24) & 0xff000000) | ((buf[2] << 16) & 0xff0000) | ((buf[1] << 8) & 0xff00) | (buf[0] & 0xff);
+    imu.tsChip = buf[0];
 
 #if 0
     Serial.printf("%2x %2x %2x %2x  %2x %2x %2x %2x\n", buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6], buf[7]);
@@ -237,25 +254,26 @@ loop(int id, struct _stProbedSc *p)
     ImudrvGoCb(id, p, &imu);
   }
 
+end:
   return 0;
 }
 
 
 static int
-start(int id, int odr)
+start(int id, struct _stProbedSc *p, int odr)
 {
   const uint8_t  settings[] = {
     CXD5602PWBIMU_OUTPUT_ENABLE,      OUTPUT_ENABLE,
   };
 
-  ImudrvI2cSetConfig(id, (uint8_t *)settings, 1);
+  ImudrvSetConfigSc(p, (uint8_t *)settings, 1);
 
   return 0;
 }
 
 
 static int
-stop(int id)
+stop(int id, struct _stProbedSc *p)
 {
 
     return 0;
@@ -292,6 +310,7 @@ intr(int id, struct _stProbedSc *p)
 struct _stImudrvList imudrvList_CXD5602 = {
   // device name
   .name =               PARAM_CHIPNAME,
+  .type =               PARAM_TYPE,
 
   // register pattern table
   .cntPatternList =     sizeof(probePatternList),

@@ -2,7 +2,10 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202512170"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202512230"
+
+// DEBUG
+#define CONFIG_DEBUG_UART_AS6668                0
 
 
 // GPIO
@@ -30,13 +33,13 @@
 #define CONFIG_GPIO_IMU_SCK0                    (13)
 #define CONFIG_GPIO_IMU_MOSI0                   (11)
 #define CONFIG_GPIO_IMU_MISO0                   (12)
-#define CONFIG_GPIO_IMU_CS00X                   (14)      // T4-SENSECAP
-#define CONFIG_GPIO_IMU_CS01X                   (25)      // T4-SENSECAP
-#define CONFIG_GPIO_IMU_CS02X                   (23)      // T4-SENSECAP
-#define CONFIG_GPIO_IMU_CS03X                   (22)      // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS00X                   (14)    // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS01X                   (25)    // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS02X                   (23)    // T4-SENSECAP
+#define CONFIG_GPIO_IMU_CS03X                   (22)    // T4-SENSECAP
 
-#define CONFIG_GPIO_LED0_T4_IMU                 (40)
-#define CONFIG_GPIO_LED0_T4_PTPGM               (23)
+#define CONFIG_GPIO_LED0_T4_IMU                 (40)    // IMU, SENSECAP
+#define CONFIG_GPIO_LED0_T4_PTPGM               (23)    // PTPGM
 #define CONFIG_GPIO_LED0                        (23)
 
 #define CONFIG_GPIO_I2C_SDA                     (18)
@@ -186,8 +189,17 @@
 #define CONFIG_NETWORK_HOSTNAME_T4_ID7          "id7"
 
 
+// SENSOR TYPE
+#define CONFIG_SENSOR_TYPE_IMU_S16              0x11
+#define CONFIG_SENSOR_TYPE_IMU_FLOAT            0x12
+#define CONFIG_SENSOR_TYPE_MAGNETIC_FLOAT       0x18
+#define CONFIG_SENSOR_TYPE_GNSS_PPS             0x20
+#define CONFIG_SENSOR_TYPE_GNSS_INT64           0x21
+#define CONFIG_SENSOR_TYPE_XXX                  0xf0
+
+
 // IMU
-#define CONFIG_SENSOR_NUM_MAX                   8
+#define CONFIG_SENSOR_NUM_MAX                   12
 #define CONFIG_IMU_CALC_TIME_PULSE              4       // 0: disable otherwise: enable and port
 #define CONFIG_SENSOR_USE_FIFO                  1
 #define CONFIG_SENSOR_FIFO_USE_MALLOC           1

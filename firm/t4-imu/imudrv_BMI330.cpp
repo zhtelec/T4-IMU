@@ -10,6 +10,7 @@
 #include        "imudrv.h"
 
 #define PARAM_CHIPNAME                  "BMI330"
+#define PARAM_TYPE                      ((IMUDRV_TYPE_DEV_IMU))
 #define PARAM_CHIPID_ADDR               0x00
 #define PARAM_CHIPID_VALUE_H            0x00
 #define PARAM_CHIPID_VALUE_L            0x48
@@ -32,6 +33,25 @@ const static uint8_t    probePatternList[] = {
 };
 
 
+
+const uint8_t  settings[] = {
+#if 0
+  // soft reset
+  , 0x01, 0x2c,     // FEATURE_IO2
+  , 0x00, 0x01,     // FEATURE_IO_STATUS
+  , 0x00, 0x00,     // FEATURE_CTRL.engine_en = 1
+#endif
+  //addr, lsb, msb  // byte order
+  0x38, 0x05, 0x00, // IO_INT_CTRL
+  0x39, 0x00, 0x00, // INT_CONF
+  0x3a, 0x00, 0x00, // INT_MAP1
+  0x3b, 0x00, 0x05, // INT_MAP2
+
+  //0x20, 0x28, 0x70, // ACC_CONF
+  //0x21, 0x48, 0x70, // GYR_CONF
+};
+
+
 static int
 probe(int bus)
 {
@@ -42,33 +62,14 @@ probe(int bus)
 
 
 static int
-init(int id, int powermode, int accfsr, int gyrfsr, int odr)
+init(int id, struct _stProbedSc *p, int powermode, int accfsr, int gyrfsr, int odr)
 {
     int         result = IMUDRV_ERRNO_UNKNOWN;
 
     uint8_t     buff[16];
     uint32_t    c;
 
-    const uint8_t  settings[] = {
-#if 0
-      // soft reset
-      , 0x01, 0x2c,     // FEATURE_IO2
-      , 0x00, 0x01,     // FEATURE_IO_STATUS
-      , 0x00, 0x00,     // FEATURE_CTRL.engine_en = 1
-#endif
-      //addr, lsb, msb  // byte order
-      0x38, 0x05, 0x00, // IO_INT_CTRL
-      0x39, 0x00, 0x00, // INT_CONF
-      0x3a, 0x00, 0x00, // INT_MAP1
-      0x3b, 0x00, 0x05, // INT_MAP2
-
-      //0x20, 0x28, 0x70, // ACC_CONF
-      //0x21, 0x48, 0x70, // GYR_CONF
-    };
-
-    for(int i = 0; i < sizeof(settings); i+=3) {
-      ImudrvSpiWrite(id, settings[i], &settings[i+1], 2);
-    }
+    ImudrvSetConfig16Sc(p, settings, 4);
 
     uint32_t    accel, gyro;
     accel = 0x7000;
@@ -110,20 +111,19 @@ init(int id, int powermode, int accfsr, int gyrfsr, int odr)
     }
     accel |= c;
 
-    struct _stProbedSc *p;
-    p = &imudrv.sc[id];
-
     p->accelFactor = 4.0 * IMUDRV_GRAVITY / (32768.0*256.0) * (float)(1 << accfsr);
     p->gyroFactor  =       500.0   / (32768.0*256.0) * (float)(1 << gyrfsr);
     p->tempDiv     = PARAM_TEMPERATURE_DIV;
     p->tempMul     = 1/PARAM_TEMPERATURE_DIV;
     p->tempOffset  = PARAM_TEMPERATURE_OFFSET;
 
-    buff[0] = accel  & 0xff;
-    buff[1] = accel >> 8;
-    buff[2] = gyro   & 0xff;
-    buff[3] = gyro  >> 8;
-    ImudrvSpiWrite(id, 0x20, buff, 5);
+    buff[0] = 0x20;
+    buff[1] = accel  & 0xff;
+    buff[2] = accel >> 8;
+    buff[3] = 0x21;
+    buff[4] = gyro   & 0xff;
+    buff[5] = gyro  >> 8;
+    ImudrvSetConfig16Sc(p, buff, 2);
 
     result = IMUDRV_SUCCESS;
 
@@ -145,7 +145,8 @@ loop(int id, struct _stProbedSc *p)
 #endif
 
     // the read transaction has one dummy byte bwt command and data/
-    ImudrvSpiReadBus(p->bus & 0x0fff, PARAM_DATA_POSITION | 0x80, buf, PARAM_DATA_LENGTH+1, &p->spiParam);
+    //ImudrvReadBus(p->bus & 0x0fff, PARAM_DATA_POSITION | 0x80, buf, PARAM_DATA_LENGTH+1, p);
+    ImudrvReadSc(p, PARAM_DATA_POSITION, buf, PARAM_DATA_LENGTH+1);
 
 #if     CONFIG_IMU_CALC_TIME_PULSE
     digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 1);
@@ -153,7 +154,8 @@ loop(int id, struct _stProbedSc *p)
 
     imu.id = id;
 
-    strcpy(imu.name, PARAM_CHIPNAME);
+    strcpy((char *)imu.name, PARAM_CHIPNAME);
+    imu.type   = PARAM_TYPE;
 
     imu.flag   = IMUDRV_FLAG_FILLED_S16;
 
@@ -179,14 +181,14 @@ loop(int id, struct _stProbedSc *p)
 
 
 static int
-start(int id, int odr)
+start(int id, struct _stProbedSc *p, int odr)
 {
     return 0;
 }
 
 
 static int
-stop(int id)
+stop(int id, struct _stProbedSc *p)
 {
 
     return 0;
@@ -200,7 +202,7 @@ stop(int id)
 static int
 store(int id, int16_t *pD, uint8_t *pS)
 {
-  int           result = IMUDRV_ERRNO_UNKNOWN;
+  int           result = IMUDRV_ERRNO_NEEDNEXTCHECK;
 
   return result;
 }
@@ -223,6 +225,7 @@ intr(int id, struct _stProbedSc *p)
 struct _stImudrvList imudrvList_BMI330 = {
   // device name
   .name =               PARAM_CHIPNAME,
+  .type =               PARAM_TYPE,
 
   // register pattern table
   .cntPatternList =     sizeof(probePatternList),

@@ -13,6 +13,9 @@ extern struct _stImudrvList    imudrvList_LSM6DSV;
 extern struct _stImudrvList    imudrvList_ICM45686;
 extern struct _stImudrvList    imudrvList_BMI323;
 extern struct _stImudrvList    imudrvList_BMI330;
+extern struct _stImudrvList    imudrvList_LIS2MDL;
+extern struct _stImudrvList    imudrvList_BMM150Poll;
+extern struct _stImudrvList    imudrvList_ADXL345Poll;
 
 
 struct _stImudrvList *imudrvList[] = {
@@ -21,6 +24,9 @@ struct _stImudrvList *imudrvList[] = {
   &imudrvList_ICM45686,
   &imudrvList_BMI323,
   &imudrvList_BMI330,
+  &imudrvList_LIS2MDL,
+  &imudrvList_ADXL345Poll,
+  &imudrvList_BMM150Poll,
   NULL,
 };
 
