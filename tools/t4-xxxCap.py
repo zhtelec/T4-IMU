@@ -18,19 +18,31 @@ paramMulticastIfAddr = "10.0.0.28"
 
 PKT_HEADER           = 0x5dac
 PKT_TYPE_IMU_FLOAT   = 0x12
+PKT_TYPE_MAGNETIC_FLOAT   = 0x18
 PKT_TYPE_GNSS_PPS    = 0x20
 PKT_TYPE_GNSS_PVT    = 0x21
 PKT_TYPE_XXX         = 0xf0
+
+cntImu               = {}
+cntMagnetic          = {}
+cntGnssPps           = {}
+cntGnssPvt           = {}
+
+seqPrev              = {}
+
 
 dirRoot       = 't4-xxxCapture'
 dirSubDateText = ''
 dirDataDate    = ''
 datePrev       = ''
 fnameImu       = 't4-xxx_imu.txt'
+fnameImu       = 't4-xxx_magnetic.txt'
 fnameGnss      = 't4-xxx_gnss.txt'
 
 optionQuiet    = False
 optionNoSave   = False
+optionCount    = False
+optionCheckSeq = False
 optionVerbose  = False
 
 sizeStrageMax  = 384 * 1024 * 1024 * 1024
@@ -38,6 +50,7 @@ sizeStrageMax  = 384 * 1024 * 1024 * 1024
 # Global state
 multicastRecvBuf = b""
 strImu           = ""
+strMagnetic      = ""
 strGnss          = ""
 parsePacketTypeImuDataNsec = 0
 
@@ -60,15 +73,19 @@ def CalcSum(data, sumv):
         sumv += b
     return sumv & 0xff
 
+def CheckSeq(idv, seq):
+    if idv in seqPrev:
+        if(((seqPrev[idv]+1) & 0xff) != seq):
+            print(f"# seq fail id: {idv}, seq: {seq:02x}, seqPrev: {seqPrev[idv]:02x}")
+    seqPrev[idv] = seq
+
 
 def ParsePacketTypeImuDataFloat(data):
     global parsePacketTypeImuDataNsec
 
-    header, length, sumv, ptype, rsv1   = struct.unpack_from("<HHBBH",   data,  0)
-    idv, seq, rsv2, ts_secH             = struct.unpack_from("BBBB",     data,  8)
-    ts_sec, ts_nsec, ts_int1MHz         = struct.unpack_from("<LLL",     data, 12)
-    axf, ayf, azf, gxf, gyf, gzf        = struct.unpack_from("<ffffff",  data, 24)
-    tempf, tsChip                       = struct.unpack_from("<fL",      data, 48)
+    header, length, sumv, ptype, rsv1                    = struct.unpack_from("<HHBBH",     data,  0)  # packet header
+    idv, seq, rsv2, ts_secH, ts_sec, ts_nsec, ts_int1MHz = struct.unpack_from("<BBBBLLL",   data,  8)  # data header
+    axf, ayf, azf, gxf, gyf, gzf,  tempf, tsChip         = struct.unpack_from("<fffffffL",  data, 24)  # data
 
     sec40 = (ts_secH << 32) + ts_sec
 
@@ -81,6 +98,39 @@ def ParsePacketTypeImuDataFloat(data):
         update = True
     parsePacketTypeImuDataNsec = ts_nsec
 
+    cntImu[idv] = cntImu.get(idv, 0) + 1
+
+    if(optionCheckSeq):
+        CheckSeq(idv, seq)
+
+
+    return s, update
+
+
+def ParsePacketTypeMagneticDataFloat(data):
+    global parsePacketTypeMagneticDataNsec
+
+    header, length, sumv, ptype, rsv1                    = struct.unpack_from("<HHBBH",     data,  0)  # packet header
+    idv, seq, rsv2, ts_secH, ts_sec, ts_nsec, ts_int1MHz = struct.unpack_from("<BBBBLLL",   data,  8)  # data header
+    mxf, myf, mzf, nxf, nyf, nzf,  tempf, tsChip         = struct.unpack_from("<fffffffL",  data, 24)  # data
+
+    sec40 = (ts_secH << 32) + ts_sec
+
+    s  = f"{ptype:02x} {idv} {seq:02x} {sec40}.{ts_nsec:09d} {ts_int1MHz:08x}"
+    s += f" {mxf:0.8f} {myf:0.8f} {mzf:0.8f}"
+    s += f" {tempf:0.2f} {tsChip:08x}\n"
+
+    update = False
+    if (sec40 % 60) == 0 and parsePacketTypeMagneticDataNsec > ts_nsec:
+        update = True
+    parsePacketTypeMagneticDataNsec = ts_nsec
+
+    cntMagnetic[idv] = cntMagnetic.get(idv, 0) + 1
+
+    if(optionCheckSeq):
+        CheckSeq(idv, seq)
+
+
     return s, update
 
 
@@ -89,9 +139,9 @@ def ParsePacketTypeGnssDataPps(data):
 
     update = False
 
-    header, length, sumv, ptype, rsv1                     = struct.unpack_from("<HHBBH",   data,  0)
-    idv, seq, rsv2, ts_secH, ts_sec, ts_nsec, ts_int1MHz  = struct.unpack_from("<BBBBLLL", data,  8)
-    [tEpochUtc]                                           = struct.unpack_from("<L",       data,  24)
+    header, length, sumv, ptype, rsv1                    = struct.unpack_from("<HHBBH",    data,   0)  # packet header
+    idv, seq, rsv2, ts_secH, ts_sec, ts_nsec, ts_int1MHz = struct.unpack_from("<BBBBLLL",  data,   8)  # data header
+    [tEpochUtc]                                          = struct.unpack_from("<L",        data,  24)  # data
 
     sec40 = (ts_secH << 32) + ts_sec
 
@@ -105,10 +155,10 @@ def ParsePacketTypeGnssDataPvt(data):
 
     update = False
 
-    header, length, sumv, ptype, rsv1   = struct.unpack_from("<HHBBH",   data,  0)
-    idv, seq, rsv2, ts_secH, ts_sec, ts_nsec, ts_int1MHz  = struct.unpack_from("<BBBBLLL",      data,  8)
+    header, length, sumv, ptype, rsv1                    = struct.unpack_from("<HHBBH",    data,   0)  # packet header
+    idv, seq, rsv2, ts_secH, ts_sec, ts_nsec, ts_int1MHz = struct.unpack_from("<BBBBLLL",  data,   8)  # data header
 
-    tUtc, iTOW, year, month, day, hour, minutes, sec, valid = struct.unpack_from("<QLHBBBBBB",  data,  24)
+    tUtc, iTOW, year, month, day, hour, minutes, sec, valid = struct.unpack_from("<QLHBBBBBB",  data,  24)  # data
     tAcc, nano, fix_type, flag, flag2, numSV                = struct.unpack_from("<LlBBBB",     data,  44)
     latitude, longitude, height, hMSL, hAcc, vAcc           = struct.unpack_from("<QQllLL",     data,  56)
     velN, velE, velD, gSpeed, headMot, sAcc, headAcc        = struct.unpack_from("<lllLLLL",    data,  88)
@@ -157,6 +207,13 @@ def SaveImu():
         strImu = ""
 
 
+def SaveMagnetic():
+    global strMagnetic
+    if len(strMagnetic) > 0:
+        StoreRecvData(strMagnetic, dirDataDate, fnameMagnetic)
+        strMagnetic = ""
+
+
 def SaveGnss():
     global strGnss
     if len(strGnss) > 0:
@@ -182,10 +239,14 @@ def handle_signals():
 
 
 def parse_options():
-    global dirDataDate, optionNoSave, optionQuiet, optionVerbose
+    global dirDataDate, optionNoSave, optionCount, optionCheckSeq, optionQuiet, optionVerbose
+    global cntImu
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--datadir", dest="datadir", type=str)
     parser.add_argument("--nosave", action="store_true")
+    parser.add_argument("--count", action="store_true")
+    parser.add_argument("--checkseq", action="store_true")
     parser.add_argument("-q", action="store_true")
     parser.add_argument("--verbose", action="store_true")
 
@@ -194,6 +255,10 @@ def parse_options():
         dirDataDate = args.datadir
     if args.nosave:
         optionNoSave = True
+    if args.count:
+        optionCount = True
+    if args.checkseq:
+        optionCheckSeq = True
     if args.q:
         optionQuiet = True
     if args.verbose:
@@ -202,6 +267,7 @@ def parse_options():
 
 def main():
     global dirSubDateText, dirDataDate, datePrev, strImu, strGnss
+    t1sec = 0;
 
     handle_signals()
 
@@ -250,6 +316,14 @@ def main():
                         if optionVerbose and s != "":
                             print(s, end="")
 
+                    elif ptype == PKT_TYPE_MAGNETIC_FLOAT:
+                        s, update = ParsePacketTypeMagneticDataFloat(data)
+                        strImu += s
+                        if update:
+                            SaveMagnetic()
+                        if optionVerbose and s != "":
+                            print(s, end="")
+
                     elif ptype == PKT_TYPE_GNSS_PPS:
                         s, update = ParsePacketTypeGnssDataPps(data)
                         strGnss += s
@@ -264,9 +338,10 @@ def main():
                         if optionVerbose and s != "":
                             print(s, end="")
 
-                    elif ptype == PKT_TYPE_XXX:
-                        pass
-
+#                    elif ptype == PKT_TYPE_XXX:
+#                        pass
+                    else:
+                         print(f"unknown type[{ptype:x}]\n");
 
             # check directory rollover
             dateUtc = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M")
@@ -280,6 +355,13 @@ def main():
 
             if (time.time() - tUpdate) >= 60:
                 tUpdate = int(time.time())
+
+            if((t1sec - int(-time.time()*1000)) > 999):
+                t1sec = int(-time.time()*1000)
+                if(optionCount):
+                    print('\n\n\n\n\n\n\n\n\n')
+                    for key in sorted(cntImu):
+                        print(f'IMU{key}: {cntImu.get(key, 0)}')
 
     except KeyboardInterrupt:
         udps.close()

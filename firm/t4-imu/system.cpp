@@ -139,6 +139,19 @@ SystemPinSettings(void)
 
   } else if(boardId == CONFIG_BOARDID_T4_SENSECAP) {
 
+    pinMode(CONFIG_GPIO_IMU_CS2X,  OUTPUT);
+    pinMode(CONFIG_GPIO_IMU_CS13X, OUTPUT);
+    pinMode(CONFIG_GPIO_IMU_CS00X, OUTPUT);
+    pinMode(CONFIG_GPIO_IMU_CS01X, OUTPUT);
+    pinMode(CONFIG_GPIO_IMU_CS02X, OUTPUT);
+    pinMode(CONFIG_GPIO_IMU_CS03X, OUTPUT);
+    digitalWrite(CONFIG_GPIO_IMU_CS2X,  1);
+    digitalWrite(CONFIG_GPIO_IMU_CS13X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS00X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS01X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS02X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS03X, 1);
+
     pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
 
     pinMode(CONFIG_GPIO_I2C_SDA,  INPUT_PULLUP);
