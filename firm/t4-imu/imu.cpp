@@ -223,6 +223,53 @@ ImuCommand(int ac, char *av[])
     } else {
       imu.debug &= ~IMU_DEBUG_SHOW_ALL;
     }
+
+  } else if(!strcmp(av[1], "regget")) {
+    uint8_t     buf[16];
+    int         id;
+    uint32_t    addr;
+    int         cnt = 1;
+    if(ac >= 5) cnt = atoi(av[4]);
+    if(cnt > sizeof(buf)) cnt = sizeof(buf);
+    if(ac >= 4) {
+      id = atoi(av[2]);
+      addr = strtoul(av[3], NULL, 16);
+      ImudrvRead(id, addr, buf, cnt);
+      Serial.printf("id%d.%02x: ", id, addr);
+      for(int i = 0; i < cnt; i++) {
+        if(i && !(i & 3)) Serial.printf(" ");
+        Serial.printf(" %02x", buf[i]);
+      }
+      Serial.printf("\n");
+    }
+
+  } else if(!strcmp(av[1], "regset")) {
+    uint8_t     buf[8];
+    int         id;
+    uint32_t    val;
+
+    if(ac >= 5) {
+      id = atoi(av[2]);
+      buf[0] = strtoul(av[3], NULL, 16);
+      val = strtoul(av[4], NULL, 16);
+      buf[1] = val;
+      ImudrvSetConfig(id, buf, 1);
+    }
+
+  } else if(!strcmp(av[1], "regset16")) {
+    uint8_t     buf[8];
+    int         id;
+    uint32_t    val;
+
+    if(ac >= 5) {
+      id = atoi(av[2]);
+      buf[0] = strtoul(av[3], NULL, 16);
+      val = strtoul(av[4], NULL, 16);
+      buf[1] =  val       & 0xff;
+      buf[2] = (val >> 8) & 0xff;
+      ImudrvSetConfig16(id, buf, 1);
+    }
+
   }
 
   if(update) {

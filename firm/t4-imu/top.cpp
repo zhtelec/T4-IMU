@@ -65,6 +65,7 @@ TopInit(void)
 
   SystemWaitCounter(500);
   SystemSetPowerEn(1);
+  SystemWaitCounter(200);
   FifoInit();
 
   Serial.printf("--------\n# version: %s\n", CONFIG_VERSION_TEXT);
@@ -97,6 +98,11 @@ TopInit(void)
     SystemCtrloutInit(0, 20);           // for test
     SystemCtrloutInit(1, 100);          // for test
 
+    SystemSpiSetCsx(1, 0, 0);
+    SystemSpiSetCsx(1, 1, 0);
+    SystemWaitUsCounter(100);
+    SystemSpiSetCsx(1, 0, 1);
+    SystemSpiSetCsx(1, 1, 1);
     ImuInit();                          // imu settings
     SdlogInit();
 
@@ -106,6 +112,17 @@ TopInit(void)
 
   } else if(id == CONFIG_BOARDID_T4_SENSECAP) {
     SystemSpiInit(0);                   // init spi bus0
+
+    for(int cs = 0; cs < 4; cs++) {
+      SystemSpiSetCsx(0, cs, 0);
+      SystemSpiSetCsx(1, cs, 0);
+    }
+    SystemWaitUsCounter(100);
+    for(int cs = 0; cs < 4; cs++) {
+      SystemSpiSetCsx(0, cs, 1);
+      SystemSpiSetCsx(1, cs, 1);
+    }
+
     ImuInit();                          // imu settings
 
   }

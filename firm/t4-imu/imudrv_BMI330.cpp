@@ -12,9 +12,8 @@
 #define PARAM_CHIPNAME                  "BMI330"
 #define PARAM_TYPE                      ((IMUDRV_TYPE_DEV_IMU))
 #define PARAM_CHIPID_ADDR               0x00
-#define PARAM_CHIPID_VALUE_H            0x00
 #define PARAM_CHIPID_VALUE_L            0x48
-#define PARAM_SPI_FREQ_IN_KHZ           10000
+#define PARAM_SPI_FREQ_IN_KHZ           1000
 #define PARAM_DATA_POSITION             0x03
 #define PARAM_DATA_LENGTH               18
 #define PARAM_FIFO_POSITION             0x16
@@ -27,7 +26,7 @@ extern struct _stImudrv      imudrv;
 
 
 const static uint8_t    probePatternList[] = {
-  1, PARAM_CHIPID_ADDR,  2, PARAM_CHIPID_VALUE_H, PARAM_CHIPID_VALUE_L,         // WHO_AM_I
+  1, PARAM_CHIPID_ADDR,  2, 0x00, PARAM_CHIPID_VALUE_L,         // WHO_AM_I
   //1, 0x20,  2, 0x00, 0x28,     // ALT_ACC_CONF
   //1, 0x21,  2, 0x00, 0x48,     // ALT_GYR_CONF
 };
@@ -55,7 +54,7 @@ const uint8_t  settings[] = {
 static int
 probe(int bus)
 {
-  int           result = IMUDRV_ERRNO_NOMATCH;
+  int           result = IMUDRV_ERRNO_NEEDNEXTCHECK;
 
   return result;
 }

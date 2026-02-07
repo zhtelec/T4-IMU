@@ -2,7 +2,7 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202601310"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202602050"
 
 // DEBUG
 #define CONFIG_DEBUG_UART_AS6668                0

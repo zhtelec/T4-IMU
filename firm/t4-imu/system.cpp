@@ -138,7 +138,6 @@ SystemPinSettings(void)
     pinMode(CONFIG_GPIO_SEL_24MHZ, OUTPUT);
 
   } else if(boardId == CONFIG_BOARDID_T4_SENSECAP) {
-
     pinMode(CONFIG_GPIO_IMU_CS2X,  OUTPUT);
     pinMode(CONFIG_GPIO_IMU_CS13X, OUTPUT);
     pinMode(CONFIG_GPIO_IMU_CS00X, OUTPUT);
@@ -159,12 +158,12 @@ SystemPinSettings(void)
     pinMode(CONFIG_GPIO_I2C1_SDA, INPUT_PULLUP);
     pinMode(CONFIG_GPIO_I2C1_SCL, INPUT_PULLUP);
 
-    pinMode(CONFIG_GPIO_IMU_DRDY12, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY13, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY00, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY01, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY02, INPUT_PULLDOWN);
-    pinMode(CONFIG_GPIO_IMU_DRDY03, INPUT_PULLDOWN);
+    pinMode(CONFIG_GPIO_IMU_DRDY12, INPUT);
+    pinMode(CONFIG_GPIO_IMU_DRDY13, INPUT);
+    pinMode(CONFIG_GPIO_IMU_DRDY00, INPUT);
+    pinMode(CONFIG_GPIO_IMU_DRDY01, INPUT);
+    pinMode(CONFIG_GPIO_IMU_DRDY02, INPUT);
+    pinMode(CONFIG_GPIO_IMU_DRDY03, INPUT);
 
     pinMode(CONFIG_B2_GPIO_LED_L, OUTPUT);
 
@@ -298,7 +297,8 @@ SystemSpiTransfer(int unit, int cs, const uint8_t *pTx, int lenTx, uint8_t *pRx,
   systemSpiRecoverTime[unit] = SystemGetUsCounter();
 
   SystemSpiSetCsx(unit, cs, 0);
-  if(unit == 1 && cs == 3) SystemWaitUsCounter(3);      // adhoc: unit1,CS3 needs dly, GPIO15 is changed too slow
+  //if(unit == 1  &&  (cs == 2 || cs == 3)) SystemWaitUsCounter(100);      // adhoc: unit1,CS2|3 needs dly, GPIO15 is changed too slow
+
   if(pParam && pParam->tWaitCs) SystemWaitUsCounter(pParam->tWaitCs);
 
   if(pParam) speed = pParam->speed;

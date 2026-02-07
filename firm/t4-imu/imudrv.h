@@ -260,15 +260,19 @@ int             ImudrvStop(int id);
 void            ImudrvSetCb(void (*cb)(struct _stImuValue *p));
 int             ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p);
 
+int             ImudrvSetConfig(int id, const uint8_t *ptr, int count);
 int             ImudrvSetConfigSc(struct _stProbedSc *p, const uint8_t *ptr, int count);
 int             ImudrvSetConfigBus(int bus, const uint8_t *ptr, int count);
+int             ImudrvSetConfig16(int id, const uint8_t *ptr, int count);
 int             ImudrvSetConfig16Sc(struct _stProbedSc *p, const uint8_t *ptr, int count);
 int             ImudrvSetConfig16Bus(int bus, const uint8_t *ptr, int count, void *pParam);
 #define       IMUDRV_SETCONFIG_WAIT     0xff
+int             ImudrvRead(int id, int addr, uint8_t *ptr, int len);
 int             ImudrvReadSc(struct _stProbedSc *p, int addr, uint8_t *ptr, int len);
 int             ImudrvReadBus(int bus, int addr, uint8_t *ptr, int len, struct _stProbedSc *p);
-
-  //int             ImudrvSpiWrite(int id, int addr, uint8_t *ptr, int len);
+int             ImudrvWrite(int id, int addr, uint8_t *ptr, int len);
+int             ImudrvWriteSc(struct _stProbedSc *p, int addr, uint8_t *ptr, int len);
+int             ImudrvWriteBus(int bus, int addr, uint8_t *ptr, int len, struct _stProbedSc *p);
 
 float           ImudrvConvTmprFloat(int id, int32_t val);
 uint32_t        ImudrvGetDataRate(int id);

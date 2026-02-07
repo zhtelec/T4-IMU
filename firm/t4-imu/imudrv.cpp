@@ -108,7 +108,6 @@ ImudrvProbe(void)
       int               bus;
       for(bus = 0; bus < 0x2000; bus++) {
         if(bus < 0x0200) {       // if = I2C0, 1
-
           if((bus & 0xff) < 0x80) {
             result = ImudrvProbeStub(bus, p);
 
@@ -259,11 +258,13 @@ ImudrvProbeStub(int bus, struct _stImudrvList *p)
 
       } else if(((bus >> 12) & 0xf) == 1) {          // SPI
         bufTx[0] |= 0x80;
+        bufTx[1] = 0;
+        bufTx[2] = 0;
         spiParam = p->spiParam;
         spiParam.speed = CONFIG_SPI_SPEED_DEFAULT;        // low speed, when probe phase
         re = SystemSpiTransfer((bus >> 8) & 0xf, bus & 0x7f, bufTx, cntTx, bufRx, cntRx, &spiParam);
       }
-      //Serial.printf("probe %x: addr:%x rx:%x %x\n", bus, 0, bufRx[0], bufRx[1]);
+      //Serial.printf("probe %x: addr:%x rx:%x %x %x\n", bus, 0, bufRx[0], bufRx[1], bufRx[2]);
       if(re < 1 || memcmp(pPat, bufRx, cntRx)) {
         match = 0;
         break;
@@ -300,7 +301,7 @@ ImudrvInit(int id, int powermode, int accfsr, int gyrfsr, int odr)
     p = &imudrv.sc[id];
     if(p->pDriver->init) {
       if(ImudrvGetTypeDev(p->pDriver->type) == IMUDRV_TYPE_DEV_IMU) {
-        Serial.printf("#       init acc=%d, gry=%d, odr=%d\n", id, accfsr, gyrfsr, odr);
+        Serial.printf("#       init acc=%d, gry=%d, odr=%d\n", accfsr, gyrfsr, odr);
       }
       result = p->pDriver->init(id, p, powermode, accfsr, gyrfsr, odr);
     }
@@ -434,32 +435,20 @@ ImudrvGoCb(int id, struct _stProbedSc *pSc, struct _stImuValue *p)
 
 
 int
+ImudrvRead(int id, int addr, uint8_t *ptr, int len)
+{
+  int                   re = -1;
+  struct _stProbedSc    *p;
+
+  p = &imudrv.sc[id];
+  re = ImudrvReadBus(p->bus, addr, ptr, len, p);
+
+  return re;
+}
+int
 ImudrvReadSc(struct _stProbedSc *p, int addr, uint8_t *ptr, int len)
 {
   int           re = -1;
-
-#if 0
-  uint8_t       buf[4];
-  int           iface, num, slave;
-
-  iface =  p->bus & IMUDRV_BUS_IF_MASK;
-  num   = (p->bus & IMUDRV_BUS_NUM_MASK) >> IMUDRV_BUS_NUM_POS;
-  slave = (p->bus & IMUDRV_BUS_SLAVE_MASK) >> IMUDRV_BUS_SLAVE_POS;
-
-  if(iface == (IMUDRV_BUS_IF_I2C)) {
-    buf[0] = addr;
-    re = SystemI2cTransfer(num, slave, buf, 1, ptr, len, &p->i2cParam);
-
-  } else if(iface == (IMUDRV_BUS_IF_SPI)) {
-    if(addr >= 0) {
-      buf[0] = addr | 0x80;
-      re = SystemSpiTransfer(num, slave, buf, 1, ptr, len, &p->spiParam);
-    } else {
-      // recv without pos tx
-      re = SystemSpiTransfer(num, slave, NULL, 0, ptr, len, &p->spiParam);
-    }
-  }
-#endif
 
   re = ImudrvReadBus(p->bus, addr, ptr, len, p);
 
@@ -489,28 +478,59 @@ ImudrvReadBus(int bus, int addr, uint8_t *ptr, int len, struct _stProbedSc *p)
 }
 
 
-#if 0
 int
-ImudrvSpiWrite(int id, int addr, uint8_t *ptr, int len)
+ImudrvWrite(int id, int addr, uint8_t *ptr, int len)
 {
-  int                   bus;
-  struct _stProbedSc    *pSc;
-  uint8_t               buf[32];
+  int                   re = -1;
+  struct _stProbedSc    *p;
 
-  pSc = &imudrv.sc[id];
-  bus = pSc->bus;
+  p = &imudrv.sc[id];
+  re = ImudrvWriteBus(p->bus, addr, ptr, len, p);
 
-  buf[0] = addr;
-  if(len > (int)sizeof(buf)-1) len = sizeof(buf)-1;
-  memcpy(buf+1, ptr, len);
-
-  SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, len+1, NULL, 0, &pSc->spiParam);
-
-  return len;
+  return re;
 }
-#endif
+int
+ImudrvWriteSc(struct _stProbedSc *p, int addr, uint8_t *ptr, int len)
+{
+  int           re = -1;
+
+  re = ImudrvWriteBus(p->bus, addr, ptr, len, p);
+
+  return re;
+}
+int
+ImudrvWriteBus(int bus, int addr, uint8_t *ptr, int len, struct _stProbedSc *p)
+{
+  int           re = -1;
+  uint8_t       buf[16];
+  int           cnt;
+
+  cnt = len;
+  if(cnt > sizeof(buf)) cnt = sizeof(buf);
+
+  if((bus & IMUDRV_BUS_IF_MASK) == (IMUDRV_BUS_IF_I2C)) {
+    re = SystemI2cTransfer((bus >> 8) & 0xf, addr & 0xff, buf, cnt, NULL, 0, &p->i2cParam);
+
+  } else if((bus & IMUDRV_BUS_IF_MASK) == (IMUDRV_BUS_IF_SPI)) {
+    for(int i = 0; i < cnt; i++) {
+      buf[i] = ptr[i];
+    }
+    re = SystemSpiTransfer((bus >> 8) & 0xf, addr & 0x7f, buf, cnt, NULL, 0, &p->spiParam);
+
+  }
+
+  return re;
+}
 
 
+int
+ImudrvSetConfig(int id, const uint8_t *ptr, int count)
+{
+  struct _stProbedSc    *p;
+
+  p = &imudrv.sc[id];
+  return ImudrvSetConfigBus(p->bus, ptr, count);
+}
 int
 ImudrvSetConfigSc(struct _stProbedSc *p, const uint8_t *ptr, int count)
 {
@@ -538,6 +558,14 @@ ImudrvSetConfigBus(int bus, const uint8_t *ptr, int count)
   }
 
   return count;
+}
+int
+ImudrvSetConfig16(int id, const uint8_t *ptr, int count)
+{
+  struct _stProbedSc    *p;
+
+  p = &imudrv.sc[id];
+  return ImudrvSetConfig16Bus(p->bus, ptr, count, NULL);
 }
 int
 ImudrvSetConfig16Sc(struct _stProbedSc *p, const uint8_t *ptr, int count)
@@ -568,51 +596,6 @@ ImudrvSetConfig16Bus(int bus, const uint8_t *ptr, int count, void *pParam)
 
   return count;
 }
-
-
-#if 0
-int
-ImudrvSpiSetConfigBus(int bus, const uint8_t *ptr, int count)
-{
-  uint8_t       buf[2];
-
-  for(int i = 0; i < count; i++) {
-    if(*ptr == 0xff) {
-      SystemWaitCounter(ptr[1]);
-    } else {
-      buf[0] = ptr[0];
-      buf[1] = ptr[1];
-      SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, NULL);
-    }
-    ptr += 2;
-  }
-
-  return count;
-}
-int
-ImudrvSpiSetConfig(int id, const uint8_t *ptr, int count)
-{
-  int           bus;
-  struct _stProbedSc          *pSc;
-  uint8_t       buf[2];
-
-  pSc = &imudrv.sc[id];
-  bus = pSc->bus;
-
-  for(int i = 0; i < count; i++) {
-    if(ptr[0] == 0xff) {
-      SystemWaitCounter(ptr[1]);
-    } else {
-      buf[0] = ptr[0];
-      buf[1] = ptr[1];
-      SystemSpiTransfer((bus >> 8) & 0xf, bus & 0xff, buf, 2, NULL, 0, &pSc->spiParam);
-    }
-    ptr += 2;
-  }
-
-  return count;
-}
-#endif
 
 
 static int
@@ -675,56 +658,55 @@ ImudrvDisableInterrupt(int intr)
 }
 
 
-static void
+FASTRUN static void
 ImudrvInterruptDrdy10(void)
 {
-
 #if     CONFIG_IMU_CALC_TIME_PULSE
   if((imudrv.idByIntr[CONFIG_GPIO_IMU_DRDY10]) >= 0) {
     digitalWrite(CONFIG_IMU_CALC_TIME_PULSE, 1);
   }
 #endif
-
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY10);
+
   return;
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy11(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY11);
   return;
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy12(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY12);
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy13(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY13);
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy00(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY00);
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy01(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY01);
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy02(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY02);
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy03(void)
 {
   ImudrvInterruptDrdy(CONFIG_GPIO_IMU_DRDY03);
 }
-static void
+FASTRUN static void
 ImudrvInterruptDrdy(int numDrdy)
 {
   struct _stProbedSc    *p;
