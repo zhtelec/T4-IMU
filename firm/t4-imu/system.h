@@ -39,6 +39,11 @@ struct _stSystemI2cParam {
 
 void                    SystemPinSettings(void);
 int                     SystemGetBoardId(void);
+uint32_t                SystemGetBoardIdSub(void);
+#define BOARDID_SUB_PTPGM_VER_POS       0
+#define BOARDID_SUB_PTPGM_VER_MASK      (1 << (BOARDID_SUB_PTPGM_VER_POS))
+#define BOARDID_SUB_PTPGM_VER_V100      (1 << (BOARDID_SUB_PTPGM_VER_POS))
+#define BOARDID_SUB_PTPGM_VER_V101      (0 << (BOARDID_SUB_PTPGM_VER_POS))
 
 void                    SystemWaitCounter(uint32_t tout);
 void                    SystemWaitUsCounter(uint32_t tout);

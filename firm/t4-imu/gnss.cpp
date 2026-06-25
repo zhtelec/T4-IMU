@@ -106,7 +106,6 @@ GnssInit(void)
   re = gnss.dev->setVal32(UBLOX_CFG_TP_LEN_LOCK_TP1, val);
   Serial.printf("# gnss: TP_LEN_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
 
-
   //gnss.dev->setAutoPVT(true);
   gnss.dev->setAutoPVTcallbackPtr(GnssCallbackPvt);
 

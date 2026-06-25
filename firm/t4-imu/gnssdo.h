@@ -4,6 +4,7 @@
 
 void            GnssdoInit(void);
 void            GnssdoLoop(void);
+void            GnssdoUninitGpt(int unit);
 void            GnssdoSetPllValue(int unit, int refFreq);
 void            GnssdoCommand(int ac, char *av[]);
 
@@ -16,6 +17,9 @@ static void             GnssdoInterruptGpt1(void);
 static void             GnssdoInterruptGpt2(void);
 static uint32_t         GnssdoGetPpsCount(int unit);
 static uint32_t         GnssdoGetFrequency(int unit);
+
+static void             GnssdoDacInit(void);
+static void             GnssdoDacLoop(void);
 
 static void             GnssdoPidInit(void);
 static void             GnssdoPid24MHzInit(void);

@@ -158,7 +158,7 @@ TopLoop(void)
   static uint32_t       t;
   if((t - SystemGetCounter()) >= SYSTEM_COUNTER_1S000) {
     t = SystemGetCounter();
-    Serial.printf("%f\n", InternalTemperature.readTemperatureC());
+    Serial.printf("%5.2f\n", InternalTemperature.readTemperatureC());
   }
 #endif
 

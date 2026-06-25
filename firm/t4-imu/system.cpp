@@ -25,6 +25,8 @@ struct _stSystemPid     systemPid50MHz;
 struct _stSystemPid     systemPidVcocxo;
 
 static int boardId = 0;
+// if T4-PTPGM  0: v1.01,0: v1.00
+static uint32_t boardIdSub = 0;
 
 void
 SystemPinSettings(void)
@@ -33,11 +35,14 @@ SystemPinSettings(void)
   IOMUXC_SW_PAD_CTL_PAD_GPIO_B0_04    = 0xf000; // pull up 47k
   IOMUXC_SW_PAD_CTL_PAD_GPIO_B0_05    = 0xf000; // pull up 47k
   IOMUXC_SW_PAD_CTL_PAD_GPIO_B0_06    = 0xf000; // pull up 47k
+  IOMUXC_SW_PAD_CTL_PAD_GPIO_B0_09    = 0xf000; // pull up 47k
   IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_04    = 0x15;   // BOARD[0]
   IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_04    = 0x15;   // BOARD[1]
   IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_04    = 0x15;   // BOARD[2]
+  IOMUXC_SW_MUX_CTL_PAD_GPIO_B0_09    = 0x15;   // BOARD SUB[0]
 
   boardId = (GPIO2_DR >> 4) & 0x7;
+  boardIdSub |= (GPIO2_DR >> 9) & 1;
 
   // the GPT clock is ipg clock
   CCM_CSCMR1 |=  CCM_CSCMR1_PERCLK_PODF(2);     // 100MHz / 2 = 50MHz
@@ -177,6 +182,11 @@ int
 SystemGetBoardId(void)
 {
   return boardId;
+}
+uint32_t
+SystemGetBoardIdSub(void)
+{
+  return boardIdSub;
 }
 
 

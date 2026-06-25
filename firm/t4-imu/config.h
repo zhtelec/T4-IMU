@@ -2,7 +2,7 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202602050"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202606250"
 
 // DEBUG
 #define CONFIG_DEBUG_UART_AS6668                0
@@ -233,18 +233,24 @@
 #define CONFIG_GNSSDO_VCOCXO_FREQ_TICK          (24.0/1000000.0)
 
 // T4-PTPGM 1.00
-#if 1
 #define CONfIG_GNSSDO_PID_24MHZ_KP              (10.0)
 #define CONfIG_GNSSDO_PID_24MHZ_KI              (2.0)
 #define CONfIG_GNSSDO_PID_24MHZ_KD              (0.02)
 #define CONfIG_GNSSDO_PID_24MHZ_OFFSET          34300.0
-#endif
+
+// T4-PTPGM 1.01
 #if 0
-#define CONfIG_GNSSDO_PID_24MHZ_KP              (-10.0)
-#define CONfIG_GNSSDO_PID_24MHZ_KI              (-2.0)
-#define CONfIG_GNSSDO_PID_24MHZ_KD              (-0.02)
-#define CONfIG_GNSSDO_PID_24MHZ_OFFSET          38300.0
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KP         (-109.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KI         (-13.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KD         (-4.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_OFFSET     38300.0
 #endif
+
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KP         (13.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KI         (3.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KD         (0.07)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_OFFSET     34300.0
+
 
 #define CONfIG_GNSSDO_PID_OCXO_KP               (-300.0)
 #define CONfIG_GNSSDO_PID_OCXO_KI               (-48000.0)
@@ -252,7 +258,8 @@
 #define CONfIG_GNSSDO_PID_OCXO_KI_FINEFACTOR    (1/4)
 #define CONfIG_GNSSDO_PID_OCXO_OFFSET           36000.0
 
-#define CONFIG_GNSSDO_DAC_TICK                  0x10
+#define CONFIG_GNSSDO_DAC_TICK                  32
+#define CONFIG_GNSSDO_DAC_DEFAULT_VALUE         0x8000
 
 // TIME
 #define timegm(tm)                              System_timegm1(tm)
@@ -261,12 +268,15 @@
 
 // VCOCXO --> PLL -> 24MHz/10MHz
 // 24MHz VCXO -- PLL -- 50MHz PeriClock
+#define CONFIG_GPT1_CLKSRC_SEL                  3       //1:ipg_clk(peri), 2:ipg_clk_highfreq, 3:extclk, 5:ipg_clk_24M
 #define CONFIG_GPT1_CLKIN_VALUE_10MHZ           (10*1000*1000)
 #define CONFIG_GPT1_CLKIN_VALUE_24MHZ           (24*1000*1000)
 #define CONFIG_GPT1_IC_VAL_MIN                  ((CONFIG_GPT1_CLKIN_VALUE) / 1000 *  999)       // bottom limit
 #define CONFIG_GPT1_IC_VAL_MAX                  ((CONFIG_GPT1_CLKIN_VALUE) / 1000 * 1001)       // top limit
 
-#define CONFIG_GPT2_CLKIN_VALUE                 (24000000)
+
+#define CONFIG_GPT2_CLKSRC_SEL                  1       //1:ipg_clk(peri), 2:ipg_clk_highfreq, 3:extclk, 5:ipg_clk_24M
+#define CONFIG_GPT2_CLKIN_VALUE                 (50000000)
 #define CONFIG_GPT2_IC_VAL_MIN                  ((CONFIG_GPT2_CLKIN_VALUE) / 1000 *  999)      // bottom limit
 #define CONFIG_GPT2_IC_VAL_MAX                  ((CONFIG_GPT2_CLKIN_VALUE) / 1000 * 1001)      // top limit
 

@@ -107,6 +107,11 @@ struct _stGnssdo {
   uint32_t              freqExtout;
   uint32_t              freqOcxoout0;
   uint32_t              freqOcxoout1;
+
+  uint32_t              tDac;
+  int                   valDac24MHzStep;
+  int                   valDac24MHzNow;
+  int                   valDac24MHzTarget;
 };
 static struct _stGnssdo gnssdo;
 
@@ -130,6 +135,8 @@ GnssdoInit(void)
   GnssdoInitGpt(1);
   GnssdoInitGpt(2);
 
+  GnssdoDacInit();
+
   GnssdoSetPllValue(0, CONFIG_GPT1_CLKIN_VALUE_24MHZ);
 
   return;
@@ -140,6 +147,8 @@ void
 GnssdoLoop(void)
 {
   int           fExtClk;
+
+  GnssdoDacLoop();
 
   if((gnssdo.t10msec - SystemGetCounter()) >= 10*SYSTEM_COUNTER_1M000S) {
     gnssdo.t10msec = SystemGetCounter();
@@ -187,17 +196,22 @@ GnssdoLoop(void)
       break;
 
     case        GNSSDO_SEQ_SET_SOURCE_FREQ:
-      int               val;
-      val  = GnssdoGetFrequency(CONFIG_GNSSDO_IDX_OCXO);
-      val += 500;
-      val /= 1000;
-      val *= 1000;
-      gnssdo.refFreq = val;
-      GnssdoSetPllValue(0, gnssdo.refFreq);
       if(!digitalRead(CONFIG_GPIO_SEL_24MHZ)) {
         // set the ref clock, if the ocxo board is connected
+        int               val;
+        val  = GnssdoGetFrequency(CONFIG_GNSSDO_IDX_OCXO);
+        val += 500;
+        val /= 1000;
+        val *= 1000;
+        gnssdo.refFreq = val;
+        //gnssdo.refFreq = CONFIG_GPT1_CLKIN_VALUE_10MHZ;
         GnssdoSetPllValue(1, CONFIG_GPT1_CLKIN_VALUE_10MHZ);
+      } else {
+        // the cpu clock is used
+        gnssdo.refFreq = CONFIG_GPT1_CLKIN_VALUE_24MHZ;
       }
+      GnssdoSetPllValue(0, gnssdo.refFreq);
+
       Serial.printf("# gnssdo: refFreq: %d\n", gnssdo.refFreq);
       gnssdo.seqTimer = SystemGetCounter();
 
@@ -233,7 +247,7 @@ GnssdoInitGpt(int unit)
 
     GPT1_CR  =  0;
     GPT1_IR  =  0x3f;
-    GPT1_CR |=  GPT_CR_CLKSRC(3);        // set clock source  1:ipg_clk, 3:extclk
+    GPT1_CR |=  GPT_CR_CLKSRC(CONFIG_GPT1_CLKSRC_SEL);        // set clock source  1:ipg_clk, 3:extclk
     GPT1_CR |=  GPT_CR_SWR;              // sw reset
     GPT1_SR  =  0x3f;
     GPT1_CR |=  GPT_CR_ENMOD;           // reset the counter
@@ -241,7 +255,7 @@ GnssdoInitGpt(int unit)
 
     GPT1_PR = GPT_PR_PRESCALER(0);      // set prescaler /1
 
-    GPT1_CR |=  GPT_CR_IM2(1) | GPT_CR_IM1(1) | GPT_CR_CLKSRC(3) | GPT_CR_FRR | GPT_CR_DBGEN;     // IC2: rise, Src: peri clock, Freerun
+    GPT1_CR |=  GPT_CR_IM2(1) | GPT_CR_IM1(1) | GPT_CR_CLKSRC(CONFIG_GPT1_CLKSRC_SEL) | GPT_CR_FRR | GPT_CR_DBGEN;     // IC2: rise, Src: peri clock, Freerun
     GPT1_CR |=  GPT_CR_EN;
 
     gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].gpt.valGptIc1 = GPT1_CNT;
@@ -258,19 +272,19 @@ GnssdoInitGpt(int unit)
     CCM_CCGR0 |= CCM_CCGR0_GPT2_BUS(CCM_CCGR_ON);       // clock enable for GPT2 module
     CCM_CMEOR |= CCM_CMEOR_MOD_EN_OV_GPT;
 
-    GPT2_PR = GPT_PR_PRESCALER(0);      // set prescaler /1
-
     GPT2_CR  =  0;
     GPT2_IR  =  0x3f;
     GPT2_CR |=  GPT_CR_EN_24M;          // enable 24MHz clk
-    GPT2_CR |=  GPT_CR_CLKSRC(5);       // set clock source  1:ipg_clk, 3:extclk, 3:ipg_clk_24M
+    GPT2_CR |=  GPT_CR_CLKSRC(CONFIG_GPT2_CLKSRC_SEL);       // set clock source  1:ipg_clk(peri), 2:ipg_clk_highfreq, 3:extclk, 5:ipg_clk_24M
     GPT2_CR |=  GPT_CR_SWR;             // sw reset
     GPT2_SR  =  0x3f;
     GPT2_CR |=  GPT_CR_ENMOD;           // reset the counter
     GPT2_CR &= ~GPT_CR_ENMOD;           // reset the counter
 
-    GPT2_CR |=  GPT_CR_EN_24M | GPT_CR_IM2(1) | GPT_CR_IM1(1) | GPT_CR_CLKSRC(5) | GPT_CR_FRR;     // IC2: rise, Src: 1=peri clock/5=ipg_clk_24M, Freerun
+    GPT2_CR |=  GPT_CR_EN_24M | GPT_CR_IM2(1) | GPT_CR_IM1(1) | GPT_CR_CLKSRC(CONFIG_GPT2_CLKSRC_SEL) | GPT_CR_FRR;     // IC2: rise, Src: 1=peri clock, 5=ipg_clk_24M, Freerun
     GPT2_CR |=  GPT_CR_EN;
+
+    GPT2_PR = GPT_PR_PRESCALER(0);      // set prescaler /1
 
     gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].gpt.valGptIc1 = GPT2_CNT;
     gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].gpt.valGptIc2 = GPT2_CNT;
@@ -280,6 +294,47 @@ GnssdoInitGpt(int unit)
 
     attachInterruptVector(IRQ_GPT2, GnssdoInterruptGpt2);
     NVIC_ENABLE_IRQ(IRQ_GPT2);
+  }
+
+
+  return;
+}
+void
+GnssdoUninitGpt(int unit)
+{
+  if(unit == 1) {
+    NVIC_DISABLE_IRQ(IRQ_GPT1);
+    attachInterruptVector(IRQ_GPT1, NULL);
+
+    GPT1_IR &=  ~GPT_IR_IF1IE;           // enable CAPTURE1 interrupt (valid only ptp slave mode)
+    GPT1_IR &=  ~GPT_IR_IF2IE;           // enable CAPTURE2 interrupt
+
+    GPT1_CR  =  0;
+    GPT1_IR  =  0x3f;
+    GPT1_SR  =  0x3f;
+
+    CCM_CCGR1 &= ~CCM_CCGR1_GPT1_SERIAL(CCM_CCGR_ON);    // clock disable for GPT1 module
+    CCM_CCGR1 &= ~CCM_CCGR1_GPT1_BUS(CCM_CCGR_ON);       // clock disable for GPT1 module
+    CCM_CMEOR &= ~CCM_CMEOR_MOD_EN_OV_GPT;
+
+  } else if(unit == 2) {
+
+    NVIC_DISABLE_IRQ(IRQ_GPT2);
+    attachInterruptVector(IRQ_GPT2, NULL);
+
+    GPT2_IR &=  ~GPT_IR_IF1IE;           // enable CAPTURE1 interrupt (valid only ptp slave mode)
+    GPT2_IR &=  ~GPT_IR_IF2IE;           // enable CAPTURE2 interrupt
+
+    gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].gpt.valGptIc1 = 0;
+    gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].gpt.valGptIc2 = 0;
+
+    GPT2_CR  =  0;
+    GPT2_IR  =  0x3f;
+    GPT2_SR  =  0x3f;
+
+    CCM_CCGR0 &= ~CCM_CCGR0_GPT2_SERIAL(CCM_CCGR_ON);    // clock enable for GPT2 module
+    CCM_CCGR0 &= ~CCM_CCGR0_GPT2_BUS(CCM_CCGR_ON);       // clock enable for GPT2 module
+    CCM_CMEOR &= ~CCM_CMEOR_MOD_EN_OV_GPT;
   }
 
 
@@ -368,9 +423,9 @@ GnssdoInterruptGpt1(void)
 //
 // for 10MHz output
 //
-//                                      +--------+
-// vcxo 24MHz  ----------------(24MHz)--|clk GPT2|
-//                                      |        |  +-------------+
+//              +---+  +---+  ipg_peri  +--------+
+// vcxo 24MHz --|PLL|--|DIV|--(50MHz)---|clk GPT2|
+//              +---+  +---+            |        |  +-------------+
 // EXT_PPS------------------------------|IC1     |--|ic1-ic2 diff |
 //                                      |        |  |  measurement|
 //                                      |        |  +-------------+
@@ -456,6 +511,62 @@ GnssdoGetFrequency(int unit)
 }
 
 
+static void
+GnssdoDacInit(void)
+{
+  uint16_t      val, valEeprom;
+
+  Mcp4726Get(0, &val, &valEeprom);
+  if(valEeprom != CONFIG_GNSSDO_DAC_DEFAULT_VALUE) {
+    valEeprom = CONFIG_GNSSDO_DAC_DEFAULT_VALUE;
+    Mcp4726SetWithEeprom(0, val, valEeprom);
+  }
+  gnssdo.valDac24MHzNow    = val;
+  gnssdo.valDac24MHzTarget = val;
+  gnssdo.valDac24MHzStep   = 0;
+
+
+  gnssdo.tDac = SystemGetCounter();
+
+  return;
+}
+static void
+GnssdoDacLoop(void)
+{
+  if((gnssdo.tDac - SystemGetCounter()) >= 10*SYSTEM_COUNTER_1M000S) {
+    gnssdo.tDac = SystemGetCounter();
+    int         diff;
+
+    diff = gnssdo.valDac24MHzTarget - gnssdo.valDac24MHzNow;
+    if(diff) {
+      //Serial.printf("xxxx %x %x\n", gnssdo.valDac24MHzTarget, gnssdo.valDac24MHzNow, diff);
+
+      if(abs(diff) <= abs(gnssdo.valDac24MHzStep)) {
+        gnssdo.valDac24MHzNow  = gnssdo.valDac24MHzTarget;
+      } else {
+        gnssdo.valDac24MHzNow += gnssdo.valDac24MHzStep;
+      }
+
+      Mcp4726Set(0, gnssdo.valDac24MHzNow);
+    }
+  }
+
+  return;
+}
+static void
+GnssdoDacSet(int unit, int val)
+{
+  int           diff;
+
+  if(val > 65535) val = 65535;
+  if(val < 0)     val = 0;
+  //Serial.printf("ssss ------ %x %x\n", gnssdo.valDac24MHzTarget, gnssdo.valDac24MHzNow);
+  gnssdo.valDac24MHzTarget = val;
+  diff = gnssdo.valDac24MHzTarget - gnssdo.valDac24MHzNow;
+  gnssdo.valDac24MHzStep = (diff > 0)? CONFIG_GNSSDO_DAC_TICK: -CONFIG_GNSSDO_DAC_TICK;
+
+  return;
+}
 
 
 static void
@@ -476,11 +587,19 @@ GnssdoPid24MHzInit(void)
   memset(p, 0, sizeof(struct _stPid));
   p->unit = CONFIG_GNSSDO_IDX_24MHZ;
 
-  p->Kp = CONfIG_GNSSDO_PID_24MHZ_KP;
-  p->Ki = CONfIG_GNSSDO_PID_24MHZ_KI;
-  p->Kd = CONfIG_GNSSDO_PID_24MHZ_KD;
+  if((SystemGetBoardIdSub() & BOARDID_SUB_PTPGM_VER_MASK)
+     == BOARDID_SUB_PTPGM_VER_V101) {
+    p->Kp = CONfIG_GNSSDO_PID_24MHZ_V101_KP;
+    p->Ki = CONfIG_GNSSDO_PID_24MHZ_V101_KI;
+    p->Kd = CONfIG_GNSSDO_PID_24MHZ_V101_KD;
+    p->offset = CONfIG_GNSSDO_PID_24MHZ_V101_OFFSET;
+  } else {
+    p->Kp = CONfIG_GNSSDO_PID_24MHZ_KP;
+    p->Ki = CONfIG_GNSSDO_PID_24MHZ_KI;
+    p->Kd = CONfIG_GNSSDO_PID_24MHZ_KD;
+    p->offset = CONfIG_GNSSDO_PID_24MHZ_OFFSET;
+  }
 
-  p->offset = CONfIG_GNSSDO_PID_24MHZ_OFFSET;
   p->dac    = p->offset;
   //p->diffRingDepth = CONFIG_GNSSDO_DIFF_HISTORY_LEN_MIN;
   p->diffRingDepth = 4;
@@ -521,12 +640,19 @@ GnssdoPid24MHz(int current, int target)
 {
   struct _stPid *p;
   int           dac;
+  int           pol = 1;
 
   p = &gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid;
-  dac = GnssdoPid(p, current, target, 1);
-  if(dac > 65535) dac = 65535;
-  if(dac <     0) dac = 0;
-  Mcp4726Set(0, dac);
+
+  if((SystemGetBoardIdSub() & BOARDID_SUB_PTPGM_VER_MASK) == BOARDID_SUB_PTPGM_VER_V101) {
+    pol = 0;
+  }
+
+  dac = GnssdoPid(p, current, target, pol);
+  //if(dac > 65535) dac = 65535;
+  //if(dac <     0) dac = 0;
+  //Mcp4726Set(0, dac);
+  GnssdoDacSet(0, dac);
 
   return;
 }
@@ -773,6 +899,20 @@ GnssdoCommand(int ac, char *av[])
         si5351Ext.set_freq(val * 100ULL, SI5351_CLK2);
        }
     }
+
+  } else if(!strcmp(av[1], "gptreset")) {
+    GnssdoUninitGpt(1);
+    GnssdoUninitGpt(2);
+
+    GnssdoInitGpt(-1);
+    GnssdoInitGpt(1);
+    GnssdoInitGpt(2);
+
+  } else if(!strcmp(av[1], "dac")) {
+    int num, val;
+    num = atoi(av[2]);
+    val = strtoul(av[3], NULL, 16);
+    GnssdoDacSet(num, val);
 
   } else if(!strcmp(av[1], "debug")) {
     if(ac >= 4) {
