@@ -418,7 +418,7 @@ SystemI2cTransfer(int unit, int addr, const uint8_t *pTx, int lenTx, uint8_t *pR
       if (re != 0) goto fail;
 
     } else {
-      pWire->endTransmission(false);
+      re = pWire->endTransmission(false);
       if (re != 0) goto fail;
 
       pWire->requestFrom(addr, lenRx);
@@ -532,15 +532,12 @@ System_timegm2(struct tm *tm)
 }
 
 
+#if 0
 static uint32_t         valGpt2Ic1;
 static uint32_t         valGpt2Ic2;
-static uint32_t         diffGpt2Ic1, diffGpt2Ic2;
-static uint32_t         flagGpt2Ic = 0;
 
 static uint32_t         valGpt1Ic1;
 static uint32_t         valGpt1Ic2;
-static uint32_t         diffGpt1Ic1, diffGpt1Ic2;
-static uint32_t         flagGpt1Ic = 0;
 void
 SystemGptIcInit(int unit)
 {
@@ -599,200 +596,6 @@ SystemGptIcInit(int unit)
     NVIC_ENABLE_IRQ(IRQ_GPT2);
   }
 
-  return;
-}
-
-
-#if 0
-//
-// for 10MHz output
-//
-//                     +---+   +-- +            +---+  +-----+  +---+
-// CLKO2_24MHz    -----|   |   |   |---(10MHz)--|buf|--|balun|--|SMA|
-// (GPIO_SD_B0_05)     |sel|---|pll|            +---+  +-----+  +---+
-//                     |   |   |   |            +-------+  +---+  +-------+  +--------+
-// EXTCLK ---(xxMHz)---|   |   |   |---(24MHz)--|CLK    |--|pid|--|ext_dac|--|ext_vcxo|
-//                     +---+   +---+            |   GPT1|  +---+  +-------+  +--------+
-// EXT_PPS--------------------------------------|IC1    |  (the external vcxo is existed)
-// GNSS_PPS ------------------------------------|IC2    |
-//                                              +-------+
-//
-void
-SystemGpt1Interrupt(void)
-{
-  uint32_t      val, diff, psc;
-  uint32_t      sr;
-
-  sr = GPT1_SR;
-  GPT1_SR = sr;                 // clear interrupt
-
-  // ext pps in
-  if(sr & GPT_SR_IF1) {
-    val = GPT1_ICR1;              // read the value
-    diff = val - valGpt1Ic1;
-    valGpt1Ic1 = val;
-
-    if((diff <= CONFIG_GPT1_IC_VAL_MAX && diff >= CONFIG_GPT1_IC_VAL_MIN) || 1) {
-      //psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      //val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT_FREQ_DEFAULT;
-      //Serial.printf("gpt1 ic1 = %d\n", diff);
-      diffGpt1Ic1 = diff;
-
-      flagGpt1Ic |= 1;
-    }
-  }
-
-  // pps in
-  if(sr & GPT_SR_IF2) {
-    val = GPT1_ICR2;              // read the value
-    diff = val - valGpt1Ic2;
-    valGpt1Ic2 = val;
-
-    flagGpt1Ic |= 2;
-
-    if(/*diff <= CONFIG_GPT1_IC_VAL_MAX && diff >= CONFIG_GPT1_IC_VAL_MIN*/ 1) {
-      SystemPidCalcVcocxo(diff, CONFIG_GPT1_CLKIN_VALUE_10MHZ);
-
-      psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      diffGpt1Ic2 = diff;
-      //Serial.printf("gpt1 ic2 = %d %d              %d %d\n", diff, 0,       psc, val);
-
-    }
-  }
-
-  if(flagGpt1Ic == 3) {
-    flagGpt1Ic = 0;
-    val = valGpt1Ic2 - valGpt1Ic1;
-    Serial.printf("gpt1: Slave PPS %d, GPS PPS %d, Delay %2d (%3dns)\n", diffGpt1Ic2, diffGpt1Ic1, val, val * 20);
-  }
-
-  return;
-}
-
-
-//
-// for 10MHz output
-//
-//                  +-------+           +---+   +---+  +---+  +---+
-// vcxo 24MHz  -----|cpu pll|--(50MHz)--|GPT2|--|pid|--|dac|--|vcxo|
-//                  +-------+           +---+   +---+  +---+  +---+
-//
-void
-SystemGpt2Interrupt(void)
-{
-  uint32_t      val, diff, psc;
-  uint32_t      sr;
-
-  sr = GPT2_SR;
-  GPT2_SR = sr;                 // clear interrupt
-
-  if(sr & GPT_SR_IF1) {
-    val = GPT2_ICR1;              // read the value
-    diff = val - valGpt2Ic1;
-    valGpt2Ic1 = val;
-
-    //Serial.printf("gpt2ic1 %x %d\n", val, diff);
-
-    if(diff <= CONFIG_GPT2_IC_VAL_MAX && diff >= CONFIG_GPT2_IC_VAL_MIN) {
-      //psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      //val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      //Serial.printf("gpt2 ic1 = %d\n", diff);
-      diffGpt2Ic1 = diff;
-
-      flagGpt2Ic |= 1;
-    }
-  }
-
-  if(sr & GPT_SR_IF2) {
-    val = GPT2_ICR2;              // read the value
-    diff = val - valGpt2Ic2;
-    valGpt2Ic2 = val;
-
-    //Serial.printf("xxx2 %x %d\n", val, diff);
-
-    flagGpt2Ic |= 2;
-
-    if(diff <= CONFIG_GPT2_IC_VAL_MAX && diff >= CONFIG_GPT2_IC_VAL_MIN) {
-      SystemPidCalc50MHz(diff, CONFIG_GPT2_CLKIN_VALUE);
-
-      psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      diffGpt2Ic2 = diff;
-      //Serial.printf("gpt2 ic2 = %d %d              %d %d\n", diff, 0,       psc, val);
-    }
-  }
-
-  if(flagGpt2Ic == 3) {
-    flagGpt2Ic = 0;
-    val = valGpt2Ic2 - valGpt2Ic1;
-    Serial.printf("gpt2: Slave PPS %d, GPS PPS %d, Delay %2d (%3dns)\n", diffGpt2Ic2, diffGpt2Ic1, val, val * 20);
-  }
-
-  return;
-}
-
-void
-SystemPidCalcInit(void)
-{
-  memset(&systemPid50MHz, 0, sizeof(systemPid50MHz));
-  memset(&systemPidVcocxo, 0, sizeof(systemPidVcocxo));
-  systemPid50MHz.interval = 1;
-  systemPidVcocxo.interval = 1;
-
-  return;
-}
-void
-SystemPidCalc50MHz(int current, int target)
-{
-  struct _stSystemPid   *p;
-
-  int           diff;
-
-#if 0
-  // 24MHz
-  int           Kp = 30;
-  int           Ki = 3;
-  int           Kd = 2;
-#endif
-
-#if 1
-  // 50MHz
-  int           Kp = 15;
-  int           Ki = 2;
-  int           Kd = 1;
-#endif
-
-  int           dac;
-
-  p = &systemPid50MHz;
-
-  diff = target - current;
-  p->diffStore += diff;
-
-  p->cnt++;
-  if(p->cnt >= p->interval) {
-
-    p->pid_P  = p->diffStore;
-    p->pid_I += p->diffStore;
-    p->pid_D  = p->diffStore - p->diffPrev;
-    p->diffPrev = p->diffStore;
-
-    dac = (Kp*p->pid_P + Ki*p->pid_I + Kd*p->pid_D)/p->interval + 32768;
-    Mcp4726Set(0, dac);
-    Serial.printf("pid dac  %d %d %d %x\n", target, current, p->diffStore, dac);
-
-    p->cnt = 0;
-    p->diffStore = 0;
-  }
-
-  return;
-}
-
-
-void
-SystemPidCalcVcocxo(int current, int target)
-{
   return;
 }
 #endif

@@ -8,12 +8,17 @@
 // OCXO PLL        -      -              1    Wire1          0x60
 //
 
-#include        <Arduino.h>
-#include        <Wire.h>
-#include        <si5351.h>
 #include        <strings.h>
 #include        <math.h>
 #include        <string.h>
+#include        <stdio.h>
+#include        <stdlib.h>
+#include        <math.h>
+#include        <float.h>
+
+#include        <Arduino.h>
+#include        <Wire.h>
+#include        <si5351.h>
 #include        <InternalTemperature.h>
 
 #include        "config.h"
@@ -21,6 +26,7 @@
 
 #include        "mcp4726.h"
 #include        "eeprom.h"
+#include        "allen.h"
 
 #include        "gnssdo.h"
 
@@ -75,6 +81,7 @@ struct _stPid {
   int           fLoopDis;
   int           debug;
 #define GNSSDO_DEBUG_SHOW_FREQ_RESULT   (1<<0)
+#define GNSSDO_DEBUG_ALLEN_MEASUREMENT  (1<<1)
 };
 
 
@@ -94,7 +101,7 @@ struct _stGnssdo {
   gnssdoSeq             seq;
 
   int                   seqTimer;
-  int                   fExtClkPrev;
+  int                   fExtClkXPrev;
 #define GNSSDO_EXTCLK_FLAG_INVALID      (-1)
 
   int                   refFreq;
@@ -122,7 +129,7 @@ GnssdoInit(void)
   memset((void *)&gnssdo, 0, sizeof(gnssdo));
 
   gnssdo.seq = GNSSDO_SEQ_IDLE;
-  gnssdo.fExtClkPrev = GNSSDO_EXTCLK_FLAG_INVALID;
+  gnssdo.fExtClkXPrev = GNSSDO_EXTCLK_FLAG_INVALID;
   gnssdo.t10msec = SystemGetCounter();
 
   gnssdo.freqExtout   = EepromGet32(CONFIG_EEPROM_PLL_EXTOUT_FREQ_POS);
@@ -138,6 +145,11 @@ GnssdoInit(void)
   GnssdoDacInit();
 
   GnssdoSetPllValue(0, CONFIG_GPT1_CLKIN_VALUE_24MHZ);
+  if(digitalRead(CONFIG_GPIO_EN_EXTOCXO)) {
+    AllenInit(CONFIG_GPT2_CLKIN_VALUE);
+  } else {
+    AllenInit(CONFIG_GPT1_CLKIN_VALUE_10MHZ);
+  }
 
   return;
 }
@@ -146,7 +158,7 @@ GnssdoInit(void)
 void
 GnssdoLoop(void)
 {
-  int           fExtClk;
+  int           fExtClkX;
 
   GnssdoDacLoop();
 
@@ -154,14 +166,14 @@ GnssdoLoop(void)
     gnssdo.t10msec = SystemGetCounter();
 
     // check to connect the external clock input
-    fExtClk = digitalRead(CONFIG_GPIO_EN_EXTOCXO);
-    if(gnssdo.fExtClkPrev != fExtClk) {
-      Serial.printf("# gnssdo: the clock source was changed [%s]\n", fExtClk?"int24MHz": "Extclk");
-      digitalWrite(CONFIG_GPIO_SEL_24MHZ, fExtClk? 1: 0);
+    fExtClkX = digitalRead(CONFIG_GPIO_EN_EXTOCXO);
+    if(gnssdo.fExtClkXPrev != fExtClkX) {
+      Serial.printf("# gnssdo: the clock source was changed [%s]\n", fExtClkX?"int24MHz": "Extclk");
+      digitalWrite(CONFIG_GPIO_SEL_24MHZ, fExtClkX? 1: 0);
 
       gnssdo.seq = GNSSDO_SEQ_IDLE;
     }
-    gnssdo.fExtClkPrev = fExtClk;
+    gnssdo.fExtClkXPrev = fExtClkX;
 
 
     // fix ref clock sequence
@@ -364,8 +376,9 @@ GnssdoUninitGpt(int unit)
 void
 GnssdoInterruptGpt1(void)
 {
-  uint32_t      val, diff, psc;
+  uint32_t      val, psc, freq;
   uint32_t      sr;
+  int           diff;
   struct _stGptReg *p;
 
   p = &gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].gpt;
@@ -376,14 +389,14 @@ GnssdoInterruptGpt1(void)
   // ext pps in
   if(sr & GPT_SR_IF1) {
     val = GPT1_ICR1;              // read the value
-    diff = val - p->valGptIc1;
+    freq = val - p->valGptIc1;
     p->valGptIc1 = val;
 
-    if(/*diff <= CONFIG_GPT1_IC_VAL_MAX && diff >= CONFIG_GPT1_IC_VAL_MIN*/ 1) {
+    if(/*freq <= CONFIG_GPT1_IC_VAL_MAX && freq >= CONFIG_GPT1_IC_VAL_MIN*/ 1) {
       psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      Serial.printf("gpt1 ic1 = %d\n", diff);
-      p->diffGptIc1 = diff;
+      val = freq * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
+      Serial.printf("gpt1 ic1 = %d\n", freq);
+      p->diffGptIc1 = freq;
 
       p->flagGptIc |= 1;
     }
@@ -392,20 +405,29 @@ GnssdoInterruptGpt1(void)
   // pps in
   if(sr & GPT_SR_IF2) {
     val = GPT1_ICR2;              // read the value
-    diff = val - p->valGptIc2;
+    freq = val - p->valGptIc2;
     p->valGptIc2 = val;
 
     p->flagGptIc |= 2;
 
-    if(/*(diff <= CONFIG_GPT1_IC_VAL_MAX && diff >= CONFIG_GPT1_IC_VAL_MIN)*/ 1) {
+    if((freq <= CONFIG_GPT1_IC_VAL_MAX && freq >= CONFIG_GPT1_IC_VAL_MIN)) {
       if(!digitalRead(CONFIG_GPIO_SEL_24MHZ) && !gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.fLoopDis) {
-        GnssdoPidVcocxo(diff, gnssdo.refFreq);
+        GnssdoPidVcocxo(freq, gnssdo.refFreq);
       }
 
       psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      p->diffGptIc2 = diff;
-      //Serial.printf("gpt1 ic2 = %d %d              %d %d\n", diff, 0,       psc, val);
+      val = freq * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
+      p->diffGptIc2 = freq;
+      //Serial.printf("gpt1 ic2 = %d %d              %d %d\n", freq, 0,       psc, val);
+
+      if(gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.debug &GNSSDO_DEBUG_ALLEN_MEASUREMENT) {
+        diff = freq - gnssdo.refFreq;
+        if(diff >= -3 && diff <= 3) {
+          float val;
+          val = ((float)diff)/(float)gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.diffRingLen;
+          AllenStoreFreq(val);
+        }
+      }
 
       p->cntPps++;
     }
@@ -438,8 +460,9 @@ GnssdoInterruptGpt1(void)
 void
 GnssdoInterruptGpt2(void)
 {
-  uint32_t      val, diff, psc;
+  uint32_t      val, psc, freq;
   uint32_t      sr;
+  int           diff;
 
   struct _stGptReg *p;
 
@@ -450,17 +473,17 @@ GnssdoInterruptGpt2(void)
 
   if(sr & GPT_SR_IF1) {
     val = GPT2_ICR1;              // read the value
-    diff = val - p->valGptIc1;
+    freq = val - p->valGptIc1;
     p->valGptIc1 = val;
 
-    //Serial.printf("gpt2ic1 %x %d\n", val, diff);
+    //Serial.printf("gpt2ic1 %x %d\n", val, freq);
 
-    if(diff <= CONFIG_GPT2_IC_VAL_MAX && diff >= CONFIG_GPT2_IC_VAL_MIN) {
+    if(freq <= CONFIG_GPT2_IC_VAL_MAX && freq >= CONFIG_GPT2_IC_VAL_MIN) {
 
       //psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      //val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      //Serial.printf("gpt2 ic1 = %d\n", diff);
-      p->diffGptIc1 = diff;
+      //val = freq * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
+      //Serial.printf("gpt2 ic1 = %d\n", freq);
+      p->diffGptIc1 = freq;
 
       p->flagGptIc |= 1;
     }
@@ -468,20 +491,29 @@ GnssdoInterruptGpt2(void)
 
   if(sr & GPT_SR_IF2) {
     val = GPT2_ICR2;              // read the value
-    diff = val - p->valGptIc2;
+    freq = val - p->valGptIc2;
     p->valGptIc2 = val;
 
     p->flagGptIc |= 2;
 
-    if(diff <= CONFIG_GPT2_IC_VAL_MAX && diff >= CONFIG_GPT2_IC_VAL_MIN) {
+    if(freq <= CONFIG_GPT2_IC_VAL_MAX && freq >= CONFIG_GPT2_IC_VAL_MIN) {
       if(!gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.fLoopDis) {
-        GnssdoPid24MHz(diff, CONFIG_GPT2_CLKIN_VALUE);
+        GnssdoPid24MHz(freq, CONFIG_GPT2_CLKIN_VALUE);
       }
 
       psc = ((*(volatile uint16_t *)(0x401E4000 + 0x4c) >> 9) & 0xf) - 8;
-      val = diff * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
-      p->diffGptIc2 = diff;
-      //Serial.printf("gpt2 ic2 = %d %d              %d %d\n", diff, 0,       psc, val);
+      val = freq * 12 / 4 / (1<<psc) / CONFIG_CTRLOUT0_FREQ_DEFAULT;
+      p->diffGptIc2 = freq;
+      //Serial.printf("gpt2 ic2 = %d %d              %d %d\n", freq, 0,       psc, val);
+
+      if(gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug &GNSSDO_DEBUG_ALLEN_MEASUREMENT) {
+        diff = freq - CONFIG_GPT2_CLKIN_VALUE;
+        if(diff >= -3 && diff <= 3) {
+          float val;
+          val = ((float)diff)/(float)gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.diffRingLen;
+          AllenStoreFreq(val);
+        }
+      }
 
       p->cntPps++;
       gnssdo.tAlivePps = SystemGetCounter();
@@ -607,7 +639,11 @@ GnssdoPid24MHzInit(void)
   p->diffRingDepthChgDown = 4;
   p->thresholdLock = CONFIG_GNSSDO_LOCK_PPB_24MHZ;
 
-  p->debug = 1;
+  if(digitalRead(CONFIG_GPIO_EN_EXTOCXO) == 1) {
+    gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug |=  GNSSDO_DEBUG_SHOW_FREQ_RESULT;
+    gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug |=  GNSSDO_DEBUG_ALLEN_MEASUREMENT;
+  }
+  //p->debug = GNSSDO_DEBUG_SHOW_FREQ_RESULT;
 
   return;
 }
@@ -631,6 +667,10 @@ GnssdoPidVcocxoInit(void)
   p->diffRingDepthChgDown = 4;
   p->thresholdLock = CONFIG_GNSSDO_LOCK_PPB_OCXO;
 
+  if(digitalRead(CONFIG_GPIO_EN_EXTOCXO) == 0) {
+    gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.debug  |=  GNSSDO_DEBUG_SHOW_FREQ_RESULT;
+    gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.debug  |=  GNSSDO_DEBUG_ALLEN_MEASUREMENT;
+  }
   //p->debug = 1;
 
   return;
@@ -908,6 +948,26 @@ GnssdoCommand(int ac, char *av[])
     GnssdoInitGpt(1);
     GnssdoInitGpt(2);
 
+  } else if(!strcmp(av[1], "allen")) {
+    if(       !strcmp(av[2], "show")) {
+      GnssdoAllenShow();
+
+    } else if(!strcmp(av[2], "init") && ac >= 4) {
+      int num = atoi(av[3]);
+      gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug &= ~GNSSDO_DEBUG_ALLEN_MEASUREMENT;
+      gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.debug  &= ~GNSSDO_DEBUG_ALLEN_MEASUREMENT;
+      if(num == CONFIG_GNSSDO_IDX_24MHZ) {
+        gnssdo.sc[num].pid.debug |= GNSSDO_DEBUG_ALLEN_MEASUREMENT;
+        AllenInit(CONFIG_GPT2_CLKIN_VALUE);
+
+      } else if(num == CONFIG_GNSSDO_IDX_OCXO) {
+        gnssdo.sc[num].pid.debug |= GNSSDO_DEBUG_ALLEN_MEASUREMENT;
+        AllenInit(CONFIG_GPT1_CLKIN_VALUE_10MHZ);
+
+      }
+
+    }
+
   } else if(!strcmp(av[1], "dac")) {
     int num, val;
     num = atoi(av[2]);
@@ -916,7 +976,9 @@ GnssdoCommand(int ac, char *av[])
 
   } else if(!strcmp(av[1], "debug")) {
     if(ac >= 4) {
-      gnssdo.sc[num].pid.debug = strtoul(av[3], NULL, 16);
+      gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug &= ~GNSSDO_DEBUG_SHOW_FREQ_RESULT;
+      gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.debug  &= ~GNSSDO_DEBUG_SHOW_FREQ_RESULT;
+      gnssdo.sc[num].pid.debug |=  GNSSDO_DEBUG_SHOW_FREQ_RESULT;
     }
   }
 
@@ -969,6 +1031,58 @@ GnssdoLockLed(void)
     SystemSetLed0(1);
   } else if(err > gnssdo.sc[sel].pid.thresholdLock) {
     SystemSetLed0(0);
+  }
+
+  return;
+}
+
+
+static void
+GnssdoAllenShow(void)
+{
+  const uint32_t  *pTime;
+  float           *pResult;
+  int             cnt;
+  int             cntTime;
+  float           arrLog[ALLEN_TAU_COUNT];
+  float           minLog = -1;
+  float           maxLog = -20.0;
+  uint32_t        tMeasure;
+
+  AllenCalc();
+
+  cnt  = AllenGetResult(&pTime, &pResult);
+  tMeasure = AllenGetMeasureTime();
+  for(int i = 0; i < cnt; i++) {
+    arrLog[i] = log10f(pResult[i]);
+    if(pResult[i] > 0.0) {
+      if(minLog > arrLog[i]) minLog = arrLog[i];
+      if(maxLog < arrLog[i]) maxLog = arrLog[i];
+    }
+  }
+  int val = (int)floorf(minLog);
+  Serial.printf("measurement time %ds\n", tMeasure);
+  Serial.printf("     s      Hz     1e%d                1e%d                1e%d\n", val, val+1, val+2);
+  for(int i = 0; i < cnt; i++) {
+    if(pResult[i] >= 0.0) {
+      char str[42];
+      int pos;
+      memset(str, ' ', sizeof(str));
+      str[0] = '|';
+      str[10] = ':';
+      str[20] = '|';
+      str[30] = ':';
+      str[40] = '|';
+      pos = (int)((arrLog[i] - floorf(minLog)) * 20.0);
+      if(pos < 0)             pos = 0;
+      if(pos > sizeof(str)-2) pos = sizeof(str) -2;
+      str[pos] = '*';
+      str[sizeof(str)-1] = '\0';
+      Serial.printf("%6d: %.3e  %s\n", pTime[i], pResult[i], str);
+    } else {
+      Serial.printf("%6d:      -\n", pTime[i]);
+    }
+
   }
 
   return;

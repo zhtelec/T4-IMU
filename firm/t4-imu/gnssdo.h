@@ -31,6 +31,7 @@ static int              GnssdoPid(struct _stPid *p, int current, int target, int
 static void             GnssdoStatistics(int unit, int value);
 static float            GnssdoTmp112GetTemperature(void);
 static void             GnssdoLockLed(void);
+static void             GnssdoAllenShow(void);
 
 
 #endif
