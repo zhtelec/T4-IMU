@@ -99,5 +99,6 @@ void AllenLoop(void);
 int             AllenGetResult(const uint32_t **pTime, float **pResult);
 uint32_t        AllenGetMeasureTime(void);
 void            AllenCalc(void);
+void            AllenFlush(int cnt);
 
 #endif /* ALLEN_VARIANCE_H */

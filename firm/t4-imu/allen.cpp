@@ -275,3 +275,17 @@ uint32_t AllenGetMeasureTime(void)
   return s_tMeasurement;
 }
 
+
+void AllenFlush(int cnt)
+{
+  if(       cnt < 0) {
+    s_count = 0;
+
+  } else if(s_count > cnt) {
+    s_count -= cnt;
+
+  }
+
+  return;
+}
+

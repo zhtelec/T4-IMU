@@ -232,6 +232,9 @@
 
 #define CONFIG_GNSSDO_VCOCXO_FREQ_TICK          (24.0/1000000.0)
 
+#define CONFIG_GNSSDO_ALLENDEV_VALID_THRESHOLD  (7)
+
+
 // T4-PTPGM 1.00
 #define CONfIG_GNSSDO_PID_24MHZ_KP              (10.0)
 #define CONfIG_GNSSDO_PID_24MHZ_KI              (2.0)
