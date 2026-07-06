@@ -1057,6 +1057,7 @@ GnssdoAllenStore(int diff, struct _stUnit *pSc)
   float val;
 
   if(diff >= -CONFIG_GNSSDO_ALLENDEV_VALID_THRESHOLD && diff <= CONFIG_GNSSDO_ALLENDEV_VALID_THRESHOLD) {
+#if 0
     if(!pSc->pid.diffRingEntry || pSc->pid.diffRingEntry*2 == pSc->pid.diffRingLen) {
       pSc->pid.allenDiffPrev  = 0;
       pSc->pid.allenValuePrev = 0.0;
@@ -1066,6 +1067,9 @@ GnssdoAllenStore(int diff, struct _stUnit *pSc)
       pSc->pid.allenValuePrev = ((float)diff)/(float)pSc->pid.diffRingLen;
     }
     AllenStoreFreq(pSc->pid.allenValuePrev);
+#endif
+    val = ((float)diff)/(float)pSc->pid.diffRingLen;
+    AllenStoreFreq(val);
     if(!(pSc->gpt.cntPps & 0x7)) AllenFlush(1);
   }
 
@@ -1098,7 +1102,7 @@ GnssdoAllenShow(void)
   }
   int val = (int)floorf(minLog);
   Serial.printf("measurement time %ds\n", tMeasure);
-  Serial.printf("     s      Hz     1e%d                1e%d                1e%d\n", val, val+1, val+2);
+  Serial.printf("     s     ppm     1e%d               1e%d                1e%d\n", val, val+1, val+2);
   for(int i = 0; i < cnt; i++) {
     if(pResult[i] >= 0.0) {
       char str[42];
