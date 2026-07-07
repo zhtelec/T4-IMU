@@ -2,7 +2,7 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202606250"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202607070"
 
 // DEBUG
 #define CONFIG_DEBUG_UART_AS6668                0
@@ -242,8 +242,8 @@
 #define CONfIG_GNSSDO_PID_24MHZ_OFFSET          34300.0
 
 // T4-PTPGM 1.01
-#define CONfIG_GNSSDO_PID_24MHZ_V101_KP         (16.0)
-#define CONfIG_GNSSDO_PID_24MHZ_V101_KI         (16.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KP         (10.0)
+#define CONfIG_GNSSDO_PID_24MHZ_V101_KI         (2.0)
 #define CONfIG_GNSSDO_PID_24MHZ_V101_KD         (0.0)
 #define CONfIG_GNSSDO_PID_24MHZ_V101_OFFSET     34300.0
 
@@ -288,4 +288,7 @@
 //#define CONFIG_CTRLOUT0_PWM_PRESCALER            4
 
 
+// ALLEN DEV MEASUREMENT
+#define CONFIG_ALLEN_EN                         1
+#define CONFIG_ALLEN_RING_LEN                   25600
 #endif

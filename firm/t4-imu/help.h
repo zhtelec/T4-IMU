@@ -35,6 +35,13 @@ const char      helpString[] =
   "gnssdo piddis [num] [0/1]       pll disable\n"
   "gnssdo showstat [0/1]           show status\n"
   "gnssdo debug [num] [0/1]        debug\n"
+#if     CONFIG_ALLEN_EN
+  "gnssdo allen init [num]         allen deviation measurement init\n"
+  "                                   num: 0 24MHz(50MHz), 1 OCXO 10MHz\n"
+  "gnssdo allen show               print the allen deviation graph\n"
+  "gnssdo allen flush [num]        flush num entries of stored data\n"
+  "\n"
+#endif
   "\n"
   "dac [num] [val]                 set dac value  num: dac number, val value (hex, 16bit)"
   "                                   num: 0: MCU 24MHz VCXO, 1: external"

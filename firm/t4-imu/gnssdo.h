@@ -31,9 +31,10 @@ static int              GnssdoPid(struct _stPid *p, int current, int target, int
 static void             GnssdoStatistics(int unit, int value);
 static float            GnssdoTmp112GetTemperature(void);
 static void             GnssdoLockLed(void);
+#if     CONFIG_ALLEN_EN
 static void             GnssdoAllenStore(int diff, struct _stUnit *pSc);
 static void             GnssdoAllenShow(void);
-
+#endif
 
 #endif
 

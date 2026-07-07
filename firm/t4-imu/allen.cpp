@@ -32,11 +32,13 @@ invalid data 個数が 10個以上でそれより上の tau は計算しない
  *   その後 τ=0 に戻ってラウンドロビンを繰り返す。
  */
 
+#include        <Arduino.h>
 #include        <float.h>
 #include        <stdint.h>
 #include        <string.h>
 #include        <math.h>
 
+#include        "config.h"
 #include        "allen.h"
 
 /* ------------------------------------------------------------------ */
@@ -83,7 +85,7 @@ static const uint32_t TAU_M[ALLEN_TAU_COUNT] = {
 /*  Ring buffer                                                         */
 /* ------------------------------------------------------------------ */
 
-static float     s_buf[ALLEN_RING_SIZE]; /**< 本体                   */
+DMAMEM static float     s_buf[ALLEN_RING_SIZE]; /**< 本体                   */
 static uint32_t  s_write;               /**< 次回書き込み位置          */
 static uint32_t  s_count;               /**< 格納済みサンプル数        */
 static float     s_fc;                  /**< 基準周波数                */

@@ -18,7 +18,7 @@
 /* ------------------------------------------------------------------ */
 
 /** ring buffer の総バイト数 (= サンプル数, int8_t x 1) */
-#define ALLEN_RING_SIZE     25600
+#define ALLEN_RING_SIZE     (CONFIG_ALLEN_RING_LEN)
 
 /** τ系列の総数 (10^(0.25k), 100kB で有効な全点) */
 #define ALLEN_TAU_COUNT     15

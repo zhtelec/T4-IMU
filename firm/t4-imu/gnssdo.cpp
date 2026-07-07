@@ -26,7 +26,9 @@
 
 #include        "mcp4726.h"
 #include        "eeprom.h"
+#if     CONFIG_ALLEN_EN
 #include        "allen.h"
+#endif
 
 #include        "gnssdo.h"
 
@@ -76,8 +78,10 @@ struct _stPid {
   int           diffRingDepthChgDown;
   int           diffSum;
 
+#if     CONFIG_ALLEN_EN
   int           allenDiffPrev;
   float         allenValuePrev;
+#endif
 
   int           dac;
 
@@ -148,11 +152,13 @@ GnssdoInit(void)
   GnssdoDacInit();
 
   GnssdoSetPllValue(0, CONFIG_GPT1_CLKIN_VALUE_24MHZ);
+#if     CONFIG_ALLEN_EN
   if(digitalRead(CONFIG_GPIO_EN_EXTOCXO)) {
     AllenInit(CONFIG_GPT2_CLKIN_VALUE);
   } else {
     AllenInit(CONFIG_GPT1_CLKIN_VALUE_10MHZ);
   }
+#endif
 
   return;
 }
@@ -425,11 +431,13 @@ GnssdoInterruptGpt1(void)
       p->diffGptIc2 = freq;
       //Serial.printf("gpt1 ic2 = %d %d              %d %d\n", freq, 0,       psc, val);
 
+#if     CONFIG_ALLEN_EN
       // allen deviation measurement
       diff = freq - gnssdo.refFreq;
       if(gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO].pid.debug &GNSSDO_DEBUG_ALLEN_MEASUREMENT) {
         GnssdoAllenStore(diff, &gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO]);
       }
+#endif
 
       p->cntPps++;
     }
@@ -508,22 +516,13 @@ GnssdoInterruptGpt2(void)
       p->diffGptIc2 = freq;
       //Serial.printf("gpt2 ic2 = %d %d              %d %d\n", freq, 0,       psc, val);
 
-#if 0
-      if(gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug &GNSSDO_DEBUG_ALLEN_MEASUREMENT) {
-        diff = freq - CONFIG_GPT2_CLKIN_VALUE;
-        if(diff >= -3 && diff <= 3) {
-          float val;
-          val = ((float)diff)/(float)gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.diffRingLen;
-          AllenStoreFreq(val);
-          if(!(p->cntPps & 0x7)) AllenFlush(1);
-        }
-      }
-#endif
+#if     CONFIG_ALLEN_EN
       // allen deviation measurement
       if(gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid.debug &GNSSDO_DEBUG_ALLEN_MEASUREMENT) {
         diff = freq - CONFIG_GPT2_CLKIN_VALUE;
-        GnssdoAllenStore(diff, &gnssdo.sc[CONFIG_GNSSDO_IDX_OCXO]);
+        GnssdoAllenStore(diff, &gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ]);
       }
+#endif
 
       p->cntPps++;
       gnssdo.tAlivePps = SystemGetCounter();
@@ -694,14 +693,13 @@ GnssdoPid24MHz(int current, int target)
 
   p = &gnssdo.sc[CONFIG_GNSSDO_IDX_24MHZ].pid;
 
+#if 0
   if((SystemGetBoardIdSub() & BOARDID_SUB_PTPGM_VER_MASK) == BOARDID_SUB_PTPGM_VER_V101) {
     pol = 0;
   }
+#endif
 
   dac = GnssdoPid(p, current, target, pol);
-  //if(dac > 65535) dac = 65535;
-  //if(dac <     0) dac = 0;
-  //Mcp4726Set(0, dac);
   GnssdoDacSet(0, dac);
 
   return;
@@ -745,15 +743,21 @@ GnssdoPid(struct _stPid *p, int current, int target, int pol)
 
   dac = p->dac;
 
+  diff = -target + current;
+
+#if 0
   if(pol > 0) {
     diff = target - current;
   } else {
     diff = -target + current;
   }
+#endif
 
   diff128 = diff;
   if(diff128 >  127) diff128 =  127;
   if(diff128 < -128) diff128 = -128;
+
+  if(pol == 1) diff128 = -diff128;
 
   //p->diffSum -= p->diffRingBuf[p->diffRingEntry];
   p->diffSum += diff128;
@@ -826,7 +830,7 @@ GnssdoPid(struct _stPid *p, int current, int target, int pol)
   if(p->debug & GNSSDO_DEBUG_SHOW_FREQ_RESULT) {
     Serial.printf("pid%d %d %4d/%4d freq:%d/diff:%2d/acc:%3d/a_l:%8.5f",
                   p->unit, gnssdo.seq, p->diffRingEntry, p->diffRingLen,
-                  target, diff128, p->diffSum,
+                  target, diff, p->diffSum,
                   (float)p->diffSum/(float)p->diffRingLen);
 
     if(p->unit == 0) Serial.printf(", temp:%5.2f", InternalTemperature.readTemperatureC());
@@ -958,6 +962,7 @@ GnssdoCommand(int ac, char *av[])
     GnssdoInitGpt(1);
     GnssdoInitGpt(2);
 
+#if     CONFIG_ALLEN_EN
   } else if(!strcmp(av[1], "allen")) {
     if(       !strcmp(av[2], "show")) {
       GnssdoAllenShow();
@@ -981,6 +986,7 @@ GnssdoCommand(int ac, char *av[])
       }
 
     }
+#endif
 
   } else if(!strcmp(av[1], "dac")) {
     int num, val;
@@ -1051,23 +1057,13 @@ GnssdoLockLed(void)
 }
 
 
+#if     CONFIG_ALLEN_EN
 static void
 GnssdoAllenStore(int diff, struct _stUnit *pSc)
 {
   float val;
 
   if(diff >= -CONFIG_GNSSDO_ALLENDEV_VALID_THRESHOLD && diff <= CONFIG_GNSSDO_ALLENDEV_VALID_THRESHOLD) {
-#if 0
-    if(!pSc->pid.diffRingEntry || pSc->pid.diffRingEntry*2 == pSc->pid.diffRingLen) {
-      pSc->pid.allenDiffPrev  = 0;
-      pSc->pid.allenValuePrev = 0.0;
-    }
-    if(diff != 0 && pSc->pid.allenDiffPrev != diff) {
-      pSc->pid.allenDiffPrev = diff;
-      pSc->pid.allenValuePrev = ((float)diff)/(float)pSc->pid.diffRingLen;
-    }
-    AllenStoreFreq(pSc->pid.allenValuePrev);
-#endif
     val = ((float)diff)/(float)pSc->pid.diffRingLen;
     AllenStoreFreq(val);
     if(!(pSc->gpt.cntPps & 0x7)) AllenFlush(1);
@@ -1127,3 +1123,4 @@ GnssdoAllenShow(void)
 
   return;
 }
+#endif
