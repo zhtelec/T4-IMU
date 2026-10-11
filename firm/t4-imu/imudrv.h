@@ -67,6 +67,7 @@ struct _stProbedSc {
 
   int                           seq;
   int                           intrPort;
+  int                           intrMode;       // RISING, FALLING, CHANGE, HIGH, LOW
   int                           intrDet;
   struct _stSystemSpiParam      spiParam;
   struct _stSystemI2cParam      i2cParam;
@@ -279,7 +280,7 @@ uint32_t        ImudrvGetDataRate(int id);
 
 int             ImudrvGetNumOfSensors(void);
 
-int             ImudrvEnableInterrupt(int intr);
+int             ImudrvEnableInterrupt(int intr, int mode = RISING);
 int             ImudrvDisableInterrupt(int intr);
 
 #ifdef  __IMUDRV_CPP__

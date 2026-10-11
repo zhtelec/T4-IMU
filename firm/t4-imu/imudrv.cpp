@@ -196,9 +196,10 @@ ImudrvProbe(void)
           if((intr = ImudrvGetInterruptPin(bus)) >= 0) {
             Serial.printf("#       intr line: %d\n", intr);
             pSc->intrPort = intr;
+            if(pSc->intrMode == 0) pSc->intrMode = RISING;  // default
             imudrv.idByIntr[intr] = id;
 
-            ImudrvEnableInterrupt(intr);
+            ImudrvEnableInterrupt(intr, pSc->intrMode);
             pSc->intrDet = 1;
 
           }
@@ -628,7 +629,7 @@ ImudrvGetInterruptPin(int bus)
 
 
 int
-ImudrvEnableInterrupt(int intr)
+ImudrvEnableInterrupt(int intr, int mode)
 {
   void (*entry)() = NULL;
 
@@ -644,7 +645,7 @@ ImudrvEnableInterrupt(int intr)
   }
 
   if(entry != NULL) {
-    attachInterrupt(intr, entry, RISING);
+    attachInterrupt(intr, entry, mode);
   }
 
   return -1;
