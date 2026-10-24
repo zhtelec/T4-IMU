@@ -18,6 +18,7 @@
 #include        "ptp.h"
 #include        "eeprom.h"
 #include        "gnss.h"
+#include        "lora.h"
 #include        "sdlog.h"
 #include        "mcp4726.h"
 #include        "gnssdo.h"
@@ -36,7 +37,7 @@ static const char *boardName[] = {
   "T4-PTPGM",
   "T4-SENSECAP",
   "N/A",
-  "N/A",
+  "T4-IMU-PTPGM",
   "N/A",
   "N/A",
   "N/A",
@@ -94,7 +95,7 @@ TopInit(void)
   int           id;
   id = SystemGetBoardId();
 
-  if(id == CONFIG_BOARDID_T4_IMU) {
+  if(id == CONFIG_BOARDID_T4_IMU || id == CONFIG_BOARDID_T4_IMU_PTPGM) {
     SystemCtrloutInit(0, 20);           // for test
     SystemCtrloutInit(1, 100);          // for test
 
@@ -127,6 +128,12 @@ TopInit(void)
 
   }
 
+  if(id == CONFIG_BOARDID_T4_IMU_PTPGM) {
+    GnssInit();
+    LoraInit();
+  }
+
+
   DebugInit();
 
   return;
@@ -149,10 +156,14 @@ TopLoop(void)
     GnssdoLoop();
   } else if(id == CONFIG_BOARDID_T4_SENSECAP) {
     ImuLoop();
+  } else if(id == CONFIG_BOARDID_T4_IMU_PTPGM) {
+    ImuLoop();
+    SdlogLoop();
+    GnssLoop();
+    LoraLoop();
   }
 
   DebugLoop();
-
 
 #if 0
   static uint32_t       t;

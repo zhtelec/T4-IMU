@@ -76,7 +76,7 @@ struct _stPacketGnssPvt {
 
   int32_t                       nano;
   uint8_t                       fixType;        // 0:NoFix, 1:DeadReckoningOnly, 2:2dFix, 3:3dFix, 5:TimeOnly
-  uint8_t                       flags;
+  uint8_t                       flags;          // [7:6]  0:no RTK, 1:RTK Float, 2:RTK Fixed
   uint8_t                       flags2;
   uint8_t                       numSV;          // pcs
 

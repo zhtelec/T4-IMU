@@ -112,7 +112,14 @@ ImudrvProbe(void)
             result = ImudrvProbeStub(bus, p);
 
           } else {
+            int         boardId;
+            boardId = SystemGetBoardId();
             bus += 0x7f;
+            // the i2c1 line is avaiable only T4_SENSECAP board
+            // 0x000-0x07f: i2c0,  0x100 - 0x17f: i2c1
+            if(boardId != CONFIG_BOARDID_T4_SENSECAP) {
+              bus += 0x100;
+            }
           }
 
         } else if(bus < 0x1000) {       // if = I2C2, 3

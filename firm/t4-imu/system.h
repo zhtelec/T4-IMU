@@ -75,6 +75,7 @@ void                    SystemPidCalcVcocxo(int current, int target);
 void                    SystemSetLed0(int on);
 void                    SystemSetLedL(int on);
 void                    SystemSetPowerEn(int on);
+void                    SystemSetPowerEn_Gnss(int on);
 void                    SystemReset(void);
 
 

@@ -87,7 +87,7 @@ PtpInit(ptpMode_t mode)
     // peripherial: ENET_1588_EVENT2_IN
     // IOMUX: ALT4
     // teensy pin: 15 (PTP signal & PPS_MASK(pin20))
-    IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B1_03 = 4;
+    // IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B1_03 = 4;
     //enable Channel2 rising edge trigger, and Configure Interrupt generation
     qindesign::network::EthernetIEEE1588.setChannelMode(2, qindesign::network::EthernetIEEE1588.TimerChannelModes::kCaptureOnRising);
     qindesign::network::EthernetIEEE1588.setChannelInterruptEnable(2, true);

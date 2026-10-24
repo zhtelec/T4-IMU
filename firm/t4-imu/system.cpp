@@ -142,6 +142,21 @@ SystemPinSettings(void)
     pinMode(CONFIG_GPIO_EN_EXTOCXO, INPUT_PULLUP);
     pinMode(CONFIG_GPIO_SEL_24MHZ, OUTPUT);
 
+    // gpio 15 is pps input
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B1_03 = 4;
+
+#if 1
+    // XBAR1: GPIO_EMC_23(ALT5=XBAR1_INOUT15) -> ENET1_1588_EVENT2_IN (ch2)
+    // GPIO_EMC_23: ALT4(GPT1_CAPTURE2) -> ALT5(XBAR1_INOUT15) に上書き
+    CCM_CCGR2 |= CCM_CCGR2_XBAR1(CCM_CCGR_ON);     // XBAR1 clock enable
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_23 = 0x15;       // ALT5: XBAR1_INOUT15
+    IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_23 = 0x10000;    // hysteresis, pulldown
+    // XBARA1_SEL38: OUT76(ENET1_1588_EVENT2_IN) <- IN15(XBAR1_INOUT15)
+    // OUT76(even): SEL38 bits[7:0]
+    // ※ OUT76 は RM "XBARA1 Output Signal Connections" で要確認
+    XBARA1_SEL38 = (XBARA1_SEL38 & 0xFF00) | 15;   // OUT76 = IN15
+#endif
+
   } else if(boardId == CONFIG_BOARDID_T4_SENSECAP) {
     pinMode(CONFIG_GPIO_IMU_CS2X,  OUTPUT);
     pinMode(CONFIG_GPIO_IMU_CS13X, OUTPUT);
@@ -172,6 +187,67 @@ SystemPinSettings(void)
 
     pinMode(CONFIG_B2_GPIO_LED_L, OUTPUT);
 
+  } else if(boardId == CONFIG_BOARDID_T4_IMU_PTPGM) {
+    digitalWrite(CONFIG_GPIO_IMU_CS0X, 1);
+    digitalWrite(CONFIG_GPIO_IMU_CS1X, 1);
+    pinMode(CONFIG_GPIO_I2C_SDA, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C_SCL, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C1_SDA, INPUT_PULLUP);
+    pinMode(CONFIG_GPIO_I2C1_SCL, INPUT_PULLUP);
+
+    pinMode(CONFIG_GPIO_IMU_RESETX, OUTPUT);
+    digitalWrite(CONFIG_GPIO_IMU_RESETX, 0);
+
+    pinMode(CONFIG_GPIO_PWREN_GNSS, OUTPUT);
+    digitalWrite(CONFIG_GPIO_PWREN_GNSS, 0);
+    SystemSetPowerEn_Gnss(1);
+
+    // gpio 15 is pps input
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B1_03 = 4;
+
+    // PPS GPT1 IC2
+    // GPT1 Clock
+    // the clock signal is disconnected on IMU-PTPGM
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B0_13 = 0x11;     // ALT1 (GPT1_CLK)
+    IOMUXC_SW_PAD_CTL_PAD_GPIO_AD_B0_13 = 0x10000;  // hysteresis, pulldown
+    IOMUXC_GPT1_IPP_IND_CLKIN_SELECT_INPUT = 0;     // GPT1CLK is  selected to GPIO_AD_B0_13_ALT1
+
+    // GPT1 Input Capture1
+    pinMode(48, INPUT_PULLDOWN);
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_24 = 0x14;       // ALT4 (GPT1_CAPTURE1)
+    IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_24 = 0x10000;    // hysteresis, pulldown
+    IOMUXC_GPT1_IPP_IND_CAPIN1_SELECT_INPUT = 0;    // GPT1IC1 is  selected to GPIO_EMC_24
+
+    // GPT1 Input Capture2
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_23 = 0x14;       // ALT4 (GPT1_CAPTURE2)
+    IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_23 = 0x10000;    // hysteresis, pulldown
+    IOMUXC_GPT1_IPP_IND_CAPIN2_SELECT_INPUT = 0;    // GPT1IC2 is  selected to GPIO_EMC_23_ALT4
+
+#if 0
+    // GPT2 Input Capture1
+    //pinMode(CONFIG_GPIO_GPT2_IC1, INPUT_PULLDOWN);
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_EMC_41 = 0x11;     // ALT1 (GPT2_CAPTURE1)
+    IOMUXC_SW_PAD_CTL_PAD_GPIO_EMC_41 = 0x10000;  // hysteresis, pulldown
+    IOMUXC_GPT2_IPP_IND_CAPIN1_SELECT_INPUT = 0;  // GPT2IC1 is  selected to GPIO_EMC_41
+#endif
+
+#if 0
+    // GPT2 Input Capture2
+    pinMode(CONFIG_GPIO_GPT2_IC2, INPUT_PULLDOWN);
+    pinMode(40, INPUT_PULLDOWN);
+    IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B1_04 = 0x18;     // ALT8 (GPT2_CAPTURE2)
+    IOMUXC_SW_PAD_CTL_PAD_GPIO_AD_B1_04 = 0x10000;  // hysteresis, pulldown
+    IOMUXC_GPT2_IPP_IND_CAPIN2_SELECT_INPUT = 1;    // GPT2IC2 is  selected to GPIO_AD_B1_04_ALT8
+#endif
+#if 1
+    pinMode(CONFIG_GPIO_GPT2_IC2, OUTPUT);
+    digitalWrite(CONFIG_GPIO_GPT2_IC2, 1);
+#endif
+
+    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
+    pinMode(CONFIG_GPIO_LED, OUTPUT);
+
+    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
   }
 
   return;
@@ -746,6 +822,18 @@ SystemSetPowerEn(int on)
 
   val = on? 1: 0;
   digitalWrite(CONFIG_GPIO_IMU_POWER,  val);
+
+  return;
+}
+
+
+void
+SystemSetPowerEn_Gnss(int on)
+{
+  int           val;
+
+  val = on? 1: 0;
+  digitalWrite(CONFIG_GPIO_PWREN_GNSS,  val);
 
   return;
 }

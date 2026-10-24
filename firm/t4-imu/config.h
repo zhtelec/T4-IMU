@@ -2,7 +2,7 @@
 #define _CONFIG_H_
 
 
-#define CONFIG_VERSION_TEXT                     "0.00.00.202607070"
+#define CONFIG_VERSION_TEXT                     "0.00.00.202610120"
 
 // DEBUG
 #define CONFIG_DEBUG_UART_AS6668                0
@@ -42,10 +42,19 @@
 #define CONFIG_GPIO_LED0_T4_PTPGM               (23)    // PTPGM
 #define CONFIG_GPIO_LED0                        (23)
 
+#define CONFIG_GPIO_PWREN_GNSS                  (41)    // IMU-PTPGM  Rpi.GPIO22(pin15)
+
 #define CONFIG_GPIO_I2C_SDA                     (18)
 #define CONFIG_GPIO_I2C_SCL                     (19)
 #define CONFIG_GPIO_I2C1_SDA                    (17)
 #define CONFIG_GPIO_I2C1_SCL                    (16)
+
+#define CONFIG_GPIO_UART2_TXD                   (7)
+#define CONFIG_GPIO_UART2_RXD                   (8)
+#define CONFIG_GPIO_UART4_TXD                   (17)
+#define CONFIG_GPIO_UART4_RXD                   (16)
+#define CONFIG_GPIO_UART8_TXD                   (34)
+#define CONFIG_GPIO_UART8_RXD                   (35)
 
 #define CONFIG_GPIO_GPT2_IC1                    (15)    // for gps pps ic
 #define CONFIG_GPIO_GPT2_IC2                    (41)    // for slave pps ic
@@ -73,7 +82,7 @@
 #define CONFIG_BOARDID_T4_PTPGM                 1
 #define CONFIG_BOARDID_T4_SENSECAP              2
 #define CONFIG_BOARDID_T4_ID3                   3
-#define CONFIG_BOARDID_T4_ID4                   4
+#define CONFIG_BOARDID_T4_IMU_PTPGM             4       // T4-IMU + Rpi-F9PD9C
 #define CONFIG_BOARDID_T4_ID5                   5
 #define CONFIG_BOARDID_T4_ID6                   6
 #define CONFIG_BOARDID_T4_ID7                   7
@@ -183,7 +192,7 @@
 #define CONFIG_NETWORK_HOSTNAME_T4_PTPGM        "t4-ptpgm"
 #define CONFIG_NETWORK_HOSTNAME_T4_SENSECAP     "t4-sensecap"
 #define CONFIG_NETWORK_HOSTNAME_T4_ID3          "id3"
-#define CONFIG_NETWORK_HOSTNAME_T4_ID4          "id4"
+#define CONFIG_NETWORK_HOSTNAME_T4_IMU_PTPGM    "t4-imu-ptpgm"
 #define CONFIG_NETWORK_HOSTNAME_T4_ID5          "id5"
 #define CONFIG_NETWORK_HOSTNAME_T4_ID6          "id6"
 #define CONFIG_NETWORK_HOSTNAME_T4_ID7          "id7"
@@ -214,6 +223,11 @@
 #define CONGIG_GNSS_UPDATE_INTERVAL             50000  // in us
 #define CONFIG_GNSS_VAL10E9                     (1000*1000*1000)
 #define CONFIG_GNSS_LOCK_COUNT                  (5)
+#define CONFIG_GNSS_SEND_NAV_PVT_WITHOUT_HPPOSLLH      0
+#define CONFIG_GNSS_CALCAVE_THRESHOLD_HLLH      308
+#define CONFIG_GNSS_CALCAVE_THRESHOLD_VLLH      220
+#define CONFIG_GNSS_CALCAVE_THRESHOLD_HLLH_CLAS 800
+#define CONFIG_GNSS_CALCAVE_THRESHOLD_VLLH_CLAS 1200
 
 
 // GNSSDO
@@ -233,6 +247,20 @@
 #define CONFIG_GNSSDO_VCOCXO_FREQ_TICK          (24.0/1000000.0)
 
 #define CONFIG_GNSSDO_ALLENDEV_VALID_THRESHOLD  (7)
+
+
+// LORA
+#define CONFIG_LORA_SERIAL_IF                   Serial4
+#define CONGIG_LORA_SERIAL_BAUD                 230400
+//#define CONFIG_LORA_PWREN                       (CONFIG_GPIO_)
+#define CONFIG_LORA_MAX_BYTE_LEN                240
+#define CONFIG_LORA_UART_TXD                    (CONFIG_GPIO_UART8_TXD)
+#define CONFIG_LORA_UART_RXD                    (CONFIG_GPIO_UART8_RXD)
+#define CONFIG_LORA_RFCFG                       "RFCFG,923,SF9,500,12,15,14,ON,OFF,OFF"
+
+#define CONFIG_LORA_DATA_BUF_SIZE               500
+#define CONFIG_LORA_SERIAL_BUF_SIZE             1024
+
 
 
 // T4-PTPGM 1.00

@@ -54,7 +54,7 @@ NetworkInit(void)
   case  CONFIG_BOARDID_T4_PTPGM:     qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_PTPGM); break;
   case  CONFIG_BOARDID_T4_SENSECAP:  qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_SENSECAP); break;
   case  CONFIG_BOARDID_T4_ID3:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID3);   break;
-  case  CONFIG_BOARDID_T4_ID4:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID4);   break;
+  case  CONFIG_BOARDID_T4_IMU_PTPGM: qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_IMU_PTPGM);   break;
   case  CONFIG_BOARDID_T4_ID5:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID5);   break;
   case  CONFIG_BOARDID_T4_ID6:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID6);   break;
   case  CONFIG_BOARDID_T4_ID7:       qn::Ethernet.setHostname(CONFIG_NETWORK_HOSTNAME_T4_ID7);   break;
@@ -105,7 +105,10 @@ NetworkLoop(void)
           Serial.printf("multicastIp: %d.%d.%d.%d\n", multicastIP[0], multicastIP[1], multicastIP[2], multicastIP[3]);
 
           mode = ptpSlave;
-          if(EepromGet8(CONFIG_EEPROM_PTP_POS) & CONFIG_EEPROM_PTP_MODE_MASK) {
+          if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
+            //mode = ptpMaster;
+            mode = ptpBoth;
+          } else if(EepromGet8(CONFIG_EEPROM_PTP_POS) & CONFIG_EEPROM_PTP_MODE_MASK) {
             mode = ptpBoth;
           }
           Serial.printf("ptp: running %s mode\n", (mode == ptpSlave)? "SLAVE": "MASTER");

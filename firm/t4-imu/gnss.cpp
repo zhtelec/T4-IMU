@@ -16,6 +16,7 @@
 #include        "network.h"
 #include        "packet.h"
 #include        "ptp.h"
+#include        "lora.h"
 
 #include        "gnss.h"
 
@@ -50,6 +51,12 @@ struct _stGnss {
 
   enum debug_mode       debug;
   uint32_t              t1Sec;
+
+  int64_t               llhAverageLatitude;
+  int64_t               llhAverageLongitude;
+  int64_t               llhAverageHeight;
+  int64_t               llhAverage_hMSL;
+  int                   llhAverageCount;
 };
 static struct _stGnss   gnss;
 
@@ -73,41 +80,56 @@ GnssInit(void)
 
   // begin the gnss library
   gnss.dev->begin(*gnss.devSerial, 10, true);
-  // set the serial baud
-  GnssInitSetBaud();
 
-  // set basic settings
-  val =  CONGIG_GNSS_SERIAL_BAUD;
-  re = gnss.dev->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
-  Serial.printf("# gnss: UART1_BAUDRATE = %d... done\n", val);
-  gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
+  if(SystemGetBoardId() == CONFIG_BOARDID_T4_PTPGM) {
+    // set the serial baud
+    GnssInitSetBaud();
 
-  val = 1;
-  re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_UBX_NAV_TIMELS_UART1, val);
-  Serial.printf("# gnss: MSGOUT_UBX_NAV_TIMELS_UART1 = %d... %s\n", val, re?"done": "ng");
+    // set basic settings
+    val =  CONGIG_GNSS_SERIAL_BAUD;
+    re = gnss.dev->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
+    Serial.printf("# gnss: UART1_BAUDRATE = %d... done\n", val);
+    gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
 
-  val = 1;
-  re = gnss.dev->setVal32(UBLOX_CFG_NMEA_SVNUMBERING, val);
-  Serial.printf("# gnss: NMEA_SVNUMBERING = %d... %s\n", val, re?"done": "ng");
+    val = 1;
+    re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_UBX_NAV_TIMELS_UART1, val);
+    Serial.printf("# gnss: MSGOUT_UBX_NAV_TIMELS_UART1 = %d... %s\n", val, re?"done": "ng");
 
-  val = 1;
-  re = gnss.dev->setVal8(UBLOX_CFG_NMEA_HIGHPREC, val);
-  Serial.printf("# gnss: NMEA_HIGHPREC = %d... %s\n", val, re?"done": "ng");
+    val = 1;
+    re = gnss.dev->setVal32(UBLOX_CFG_NMEA_SVNUMBERING, val);
+    Serial.printf("# gnss: NMEA_SVNUMBERING = %d... %s\n", val, re?"done": "ng");
 
-  val = 1000;
-  re = gnss.dev->setVal16(UBLOX_CFG_RATE_MEAS, val);
-  Serial.printf("# gnss: RATE_MEAS = %d... %s\n", val, re?"done": "ng");
+    val = 1;
+    re = gnss.dev->setVal8(UBLOX_CFG_NMEA_HIGHPREC, val);
+    Serial.printf("# gnss: NMEA_HIGHPREC = %d... %s\n", val, re?"done": "ng");
 
-  val = 1000 * 1000;
-  re = gnss.dev->setVal32(UBLOX_CFG_TP_PERIOD_LOCK_TP1, val);
-  Serial.printf("# gnss: TP_PERIOD_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
+    val = 1000;
+    re = gnss.dev->setVal16(UBLOX_CFG_RATE_MEAS, val);
+    Serial.printf("# gnss: RATE_MEAS = %d... %s\n", val, re?"done": "ng");
 
-  val =  100 * 1000;
-  re = gnss.dev->setVal32(UBLOX_CFG_TP_LEN_LOCK_TP1, val);
-  Serial.printf("# gnss: TP_LEN_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
+    val = 1000 * 1000;
+    re = gnss.dev->setVal32(UBLOX_CFG_TP_PERIOD_LOCK_TP1, val);
+    Serial.printf("# gnss: TP_PERIOD_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
+
+    val =  100 * 1000;
+    re = gnss.dev->setVal32(UBLOX_CFG_TP_LEN_LOCK_TP1, val);
+    Serial.printf("# gnss: TP_LEN_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
+  } else if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
+    // set the serial baud
+    GnssInitSetBaud();
+
+    // set basic settings
+    val =  CONGIG_GNSS_SERIAL_BAUD;
+    re = gnss.dev->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
+    Serial.printf("# gnss: UART1_BAUDRATE = %d... done\n", val);
+    gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
+
+  }
 
   //gnss.dev->setAutoPVT(true);
   gnss.dev->setAutoPVTcallbackPtr(GnssCallbackPvt);
+  gnss.dev->setAutoHPPOSLLHcallbackPtr(GnssCallbackHpPosLLH);
+  gnss.dev->setRTCM1005callbackPtr(GnssCallbackRtcm1005);
 
   return;
 }
@@ -140,7 +162,7 @@ static int  gnssBaudScanList[] = {921600, 38400, 57600, 115200, 230400, 460800,
 static void
 GnssInitSetBaud(void)
 {
-  for(int i = 0; i < sizeof(gnssBaudScanList)/sizeof(int); i++) {
+  for(int i = 0; i < (int)(sizeof(gnssBaudScanList)/sizeof(int)); i++) {
     Serial.printf("# gnss: auto baud [%d]   \r", gnssBaudScanList[i]);
     gnss.devSerial->begin(gnssBaudScanList[i]);
     if (gnss.dev->getPVT()) {
@@ -271,6 +293,10 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
   }
 
 
+  LoraSend((const char *)pPVT, sizeof(UBX_NAV_PVT_data_t));     // for test
+  //LoraSend((const char *)pPVT, 400);     // for test
+
+
   if(gnss.debug & GNSS_DEBUG_SHOW_PVT) {
     char        buf[256];
     int         len = 0;
@@ -289,7 +315,8 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
     len  = sprintf(buf + len, "gps NAV PVT %lld.%09ld", gnss.tai, nano);
     len += sprintf(buf + len, " %04d%02d%02d%02d%02d%02d%03d %09ld", pPVT->year, pPVT->month, pPVT->day, pPVT->hour, pPVT->min, pPVT->sec, msec, pPVT->nano);
     len += sprintf(buf + len, " %ld: %ld %ld %ld (%4d %4d) ", pPVT->iTOW, pPVT->lat, pPVT->lon, pPVT->hMSL, (int)pPVT->hAcc*10, (int)pPVT->vAcc*10);
-    len += sprintf(buf + len, " %ld %ld %ld\n", pPVT->gSpeed, pPVT->headMot, pPVT->headAcc);
+    len += sprintf(buf + len, " %ld %ld %ld", pPVT->gSpeed, pPVT->headMot, pPVT->headAcc);
+    len += sprintf(buf + len, " %d(%d)\n", pPVT->fixType, pPVT->flags.bits.carrSoln);
 
     Serial.print(buf);
   }
@@ -300,6 +327,60 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
 
 
  return;
+}
+
+
+static void
+GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos)
+{
+  struct _stPacketGnssPvt       *pPkt;
+  pPkt = &gnss.pktLatest;
+
+  if(!pHpPos->flags.bits.invalidLlh && pPkt->iTOW == pHpPos->iTOW) {
+
+    // update HPPOSLLH
+    pPkt->lat    = pHpPos->lat  * 100LL + pHpPos->latHp;
+    pPkt->lon    = pHpPos->lon  * 100LL + pHpPos->lonHp;
+    pPkt->hMSL  += pHpPos->hMSLHp;
+    pPkt->height+= pHpPos->heightHp;
+    pPkt->hAcc  += pHpPos->hAcc;
+    pPkt->vAcc  += pHpPos->vAcc;
+
+    PacketCalcSumAndFillHeader((struct _stPacketGeneric *)pPkt, sizeof(struct _stPacketGnssPvt));
+
+    NetworkSendUdp((uint8_t *)pPkt, sizeof(struct _stPacketGnssPvt));
+
+
+    if(gnss.debug & GNSS_DEBUG_SHOW_HPPOSLLH) {
+      Serial.printf("gps NAV HP POSLLH                                            %ld: %lld %lld %ld (%4d %4d)\n",
+                    gnss.pktLatest.iTOW, gnss.pktLatest.lat, gnss.pktLatest.lon, gnss.pktLatest.hMSL, pPkt->hAcc, pPkt->vAcc);
+    }
+
+    // calc pos average
+    if((pPkt->hAcc <= CONFIG_GNSS_CALCAVE_THRESHOLD_HLLH      && pPkt->vAcc <= CONFIG_GNSS_CALCAVE_THRESHOLD_VLLH      && SystemGetBoardId() == CONFIG_BOARDID_T4_PTPGM) ||
+       (pPkt->hAcc <= CONFIG_GNSS_CALCAVE_THRESHOLD_HLLH_CLAS && pPkt->vAcc <= CONFIG_GNSS_CALCAVE_THRESHOLD_VLLH_CLAS && SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) ) {
+      gnss.llhAverageLatitude  += pPkt->lat;
+      gnss.llhAverageLongitude += pPkt->lon;
+      gnss.llhAverageHeight    += pPkt->height;
+      gnss.llhAverage_hMSL     += pPkt->hMSL;
+      gnss.llhAverageCount++;
+    }
+
+  } else {
+    Serial.printf("# gpss pos llh -------skip  iTOW:%d %d\n", pPkt->iTOW, pHpPos->iTOW);
+
+  }
+
+  return;
+}
+
+
+static void
+GnssCallbackRtcm1005(RTCM_1005_data_t *pRtcm)
+{
+  LoraSend((const char *)pRtcm, sizeof(RTCM_1005_data_t));
+  Serial.printf("gnss rtcm1005 xxxx\n");
+  return;
 }
 
 
@@ -374,6 +455,14 @@ GnssCommand(int ac, char *av[])
       GnssSetDebugMode(0, val);
     }
 
+ } else if(!strcmp(av[1], "showllh")) {
+    enum debug_mode     val = GNSS_DEBUG_SHOW_HPPOSLLH;
+    if(av[2][0] == '1') {
+      GnssSetDebugMode(val, val);
+    } else {
+      GnssSetDebugMode(0, val);
+    }
+
   } else if(!strcmp(av[1], "showtime")) {
     enum debug_mode     val = GNSS_DEBUG_SHOW_TIME;
     if(av[2][0] == '1') {
@@ -381,6 +470,22 @@ GnssCommand(int ac, char *av[])
     } else {
       GnssSetDebugMode(0, val);
     }
+
+  } else if(!strcmp(av[1], "llhave")) {
+    Serial.printf("LLH average latitude: %lld, longitude: %lld, height: %lld, hMSL: %lld  count: %ld\n",
+                  (gnss.llhAverageLatitude / gnss.llhAverageCount),
+                  (gnss.llhAverageLongitude / gnss.llhAverageCount),
+                  (gnss.llhAverageHeight / gnss.llhAverageCount),
+                  (gnss.llhAverage_hMSL / gnss.llhAverageCount),
+                  gnss.llhAverageCount);
+
+  } else if(!strcmp(av[1], "llhclr")) {
+    gnss.llhAverageLatitude  =0.0;
+    gnss.llhAverageLongitude =0.0;
+    gnss.llhAverageHeight    =0.0;
+    gnss.llhAverage_hMSL     =0.0;
+    gnss.llhAverageCount     =0;
+
   }
 
   return;
