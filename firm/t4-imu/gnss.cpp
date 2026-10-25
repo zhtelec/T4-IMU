@@ -24,13 +24,18 @@
 
 
 static SFE_UBLOX_GNSS_SERIAL  GnssDev;
+static SFE_UBLOX_GNSS_SERIAL  GnssDevClas;
 
 struct _stGnss {
-  SFE_UBLOX_GNSS_SERIAL *dev;
   int64_t               tSecPrev;
 
+  SFE_UBLOX_GNSS_SERIAL *dev;
   HardwareSerial        *devSerial;
   uint8_t               devSerialRxBuf[CONGIG_GNSS_SERIAL_RXBUF_SIZE];
+
+  SFE_UBLOX_GNSS_SERIAL *devClas;
+  HardwareSerial        *devSerialClas;
+  uint8_t               devSerialRxBufClas[CONGIG_GNSS_SERIAL_RXBUF_SIZE];
 
   int                   week;
   int                   msecOfWeek;
@@ -43,6 +48,15 @@ struct _stGnss {
 
   uint8_t               seq;
   uint8_t               seqPps;
+
+  int                   fixValue;
+#define GNSS_FIXVALUE_INVALID    (-1)
+#define GNSS_FIXVALUE_NO_FIX     0
+#define GNSS_FIXVALUE_2D         1
+#define GNSS_FIXVALUE_3D         2
+#define GNSS_FIXVALUE_3D_DGNSS   3
+#define GNSS_FIXVALUE_3D_FLOAT   4
+#define GNSS_FIXVALUE_3D_FIXED   5
 
   int                   cntLock;        // +2 pps intr, -1 every 1sec
 
@@ -60,6 +74,24 @@ struct _stGnss {
 };
 static struct _stGnss   gnss;
 
+#define GnssIsNoFix(type, flags)        (type == 0)
+#define GnssIs2d(type, flags)           (type == 2)
+#define GnssIs3d(type, flags)           (type == 3 && !(flags & 2))
+#define GnssIs3dDgnss(type, flags)      (type == 3 &&  (flags & 2) && (flags & 0xc0) == 0x00)
+#define GnssIs3dFloat(type, flags)      (type == 3 &&  (flags & 2) && (flags & 0xc0) == 0x40)
+#define GnssIs3dFixed(type, flags)      (type == 3 &&  (flags & 2) && (flags & 0xc0) == 0x80)
+
+static const char       gnssFixText_NoFix[]             = "No fix";
+static const char       gnssFixText_DeadReckoning[]     = "Dead Reckoning";
+static const char       gnssFixText_2dFix[]             = "2D fix";
+static const char       gnssFixText_3dFix[]             = "3D";
+static const char       gnssFixText_3dFixDgnss[]        = "3D/DGNSS";
+static const char       gnssFixText_3dFixFloat[]        = "3D/DGNSS/Float";
+static const char       gnssFixText_3dFixFixed[]        = "3D/DGNSS/Fixed";
+static const char       gnssFixText_GnssDeadReckoning[] = "GNSS+Dead Reckoning combined";
+static const char       gnssFixText_TimeOnly[]          = "Time only";
+
+
 
 void
 GnssInit(void)
@@ -68,7 +100,9 @@ GnssInit(void)
   uint32_t      val;
 
   memset(&gnss, 0, sizeof(gnss));
+  gnss.fixValue = GNSS_FIXVALUE_INVALID;
 
+  // set data pointer
   gnss.devSerial = &CONFIG_GNSS_SERIAL_IF;
   CONFIG_GNSS_SERIAL_IF.addMemoryForRead(gnss.devSerialRxBuf, sizeof(gnss.devSerialRxBuf));
   gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
@@ -81,55 +115,68 @@ GnssInit(void)
   // begin the gnss library
   gnss.dev->begin(*gnss.devSerial, 10, true);
 
-  if(SystemGetBoardId() == CONFIG_BOARDID_T4_PTPGM) {
-    // set the serial baud
-    GnssInitSetBaud();
+  // set the serial baud
+  GnssInitSetBaud(gnss.dev, gnss.devSerial);
+  val =  CONGIG_GNSS_SERIAL_BAUD;
+  re = gnss.dev->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
+  Serial.printf("# gnss: UART1_BAUDRATE = %d... done\n", val);
+  gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
 
-    // set basic settings
-    val =  CONGIG_GNSS_SERIAL_BAUD;
-    re = gnss.dev->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
-    Serial.printf("# gnss: UART1_BAUDRATE = %d... done\n", val);
-    gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
+  // set basic settings
+  val = 1;
+  re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_UBX_NAV_TIMELS_UART1, val);
+  Serial.printf("# gnss: MSGOUT_UBX_NAV_TIMELS_UART1 = %d... %s\n", val, re?"done": "ng");
 
-    val = 1;
-    re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_UBX_NAV_TIMELS_UART1, val);
-    Serial.printf("# gnss: MSGOUT_UBX_NAV_TIMELS_UART1 = %d... %s\n", val, re?"done": "ng");
+  val = 1;
+  re = gnss.dev->setVal32(UBLOX_CFG_NMEA_SVNUMBERING, val);
+  Serial.printf("# gnss: NMEA_SVNUMBERING = %d... %s\n", val, re?"done": "ng");
 
-    val = 1;
-    re = gnss.dev->setVal32(UBLOX_CFG_NMEA_SVNUMBERING, val);
-    Serial.printf("# gnss: NMEA_SVNUMBERING = %d... %s\n", val, re?"done": "ng");
+  val = 1;
+  re = gnss.dev->setVal8(UBLOX_CFG_NMEA_HIGHPREC, val);
+  Serial.printf("# gnss: NMEA_HIGHPREC = %d... %s\n", val, re?"done": "ng");
 
-    val = 1;
-    re = gnss.dev->setVal8(UBLOX_CFG_NMEA_HIGHPREC, val);
-    Serial.printf("# gnss: NMEA_HIGHPREC = %d... %s\n", val, re?"done": "ng");
+  val = 1000;
+  re = gnss.dev->setVal16(UBLOX_CFG_RATE_MEAS, val);
+  Serial.printf("# gnss: RATE_MEAS = %d... %s\n", val, re?"done": "ng");
 
-    val = 1000;
-    re = gnss.dev->setVal16(UBLOX_CFG_RATE_MEAS, val);
-    Serial.printf("# gnss: RATE_MEAS = %d... %s\n", val, re?"done": "ng");
+  val = 1000 * 1000;
+  re = gnss.dev->setVal32(UBLOX_CFG_TP_PERIOD_LOCK_TP1, val);
+  Serial.printf("# gnss: TP_PERIOD_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
 
-    val = 1000 * 1000;
-    re = gnss.dev->setVal32(UBLOX_CFG_TP_PERIOD_LOCK_TP1, val);
-    Serial.printf("# gnss: TP_PERIOD_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
-
-    val =  100 * 1000;
-    re = gnss.dev->setVal32(UBLOX_CFG_TP_LEN_LOCK_TP1, val);
-    Serial.printf("# gnss: TP_LEN_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
-  } else if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
-    // set the serial baud
-    GnssInitSetBaud();
-
-    // set basic settings
-    val =  CONGIG_GNSS_SERIAL_BAUD;
-    re = gnss.dev->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
-    Serial.printf("# gnss: UART1_BAUDRATE = %d... done\n", val);
-    gnss.devSerial->begin(CONGIG_GNSS_SERIAL_BAUD);
-
-  }
+  val =  100 * 1000;
+  re = gnss.dev->setVal32(UBLOX_CFG_TP_LEN_LOCK_TP1, val);
+  Serial.printf("# gnss: TP_LEN_LOCK_TP1 = %d... %s\n", val, re?"done": "ng");
 
   //gnss.dev->setAutoPVT(true);
   gnss.dev->setAutoPVTcallbackPtr(GnssCallbackPvt);
   gnss.dev->setAutoHPPOSLLHcallbackPtr(GnssCallbackHpPosLLH);
   gnss.dev->setRTCM1005callbackPtr(GnssCallbackRtcm1005);
+
+
+  //*****************************************
+  // setup clas serial port
+  if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
+
+    // set data pointer
+    gnss.devSerialClas = &CONFIG_GNSS_SERIAL_CLAS_IF;
+    CONFIG_GNSS_SERIAL_CLAS_IF.addMemoryForRead(gnss.devSerialRxBufClas, sizeof(gnss.devSerialRxBufClas));
+    gnss.devSerialClas->begin(CONGIG_GNSS_SERIAL_CLAS_BAUD);
+    gnss.devClas = &GnssDevClas;
+
+    // begin the gnss library of D9C
+    gnss.devClas->begin(*gnss.devSerialClas, 10, true);
+
+    // set the serial baud
+    GnssInitSetBaud(gnss.devClas, gnss.devSerialClas);
+    val =  CONGIG_GNSS_SERIAL_BAUD;
+    re = gnss.devClas->setVal32(UBLOX_CFG_UART1_BAUDRATE, val, VAL_LAYER_RAM, 100);
+    Serial.printf("# gnss: D9C UART1_BAUDRATE = %d... done\n", val);
+    gnss.devSerialClas->begin(CONGIG_GNSS_SERIAL_BAUD);
+
+    // set callback of D9C
+    gnss.devClas->setRXMQZSSL6messageCallbackPtr(GnssCallbackQzss);
+
+  }
 
   return;
 }
@@ -147,8 +194,23 @@ GnssLoop(void)
   gnss.dev->checkUblox();
   gnss.dev->checkCallbacks();
 
+  if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
+    gnss.devClas->checkUblox();
+    gnss.devClas->checkCallbacks();
+  }
+
   if((gnss.t1Sec - SystemGetCounter()) >= 1000) {
     gnss.t1Sec = SystemGetCounter();
+
+    {
+      int         fixValue;
+      fixValue = GnssGetFixTypeValue();
+
+      if(gnss.fixValue != fixValue) {
+        Serial.printf("# gnss: fix type=%d (%s)\n", fixValue, GnssGetFixValueText(fixValue));
+        gnss.fixValue = fixValue;
+      }
+    }
 
     if(gnss.cntLock > 0) gnss.cntLock--;
   }
@@ -160,12 +222,12 @@ GnssLoop(void)
 static int  gnssBaudScanList[] = {921600, 38400, 57600, 115200, 230400, 460800,
                                   1200, 2400, 4800, 9600, 19200, 1000000, 2000000};
 static void
-GnssInitSetBaud(void)
+GnssInitSetBaud(SFE_UBLOX_GNSS_SERIAL *dev, HardwareSerial *devSerial)
 {
   for(int i = 0; i < (int)(sizeof(gnssBaudScanList)/sizeof(int)); i++) {
     Serial.printf("# gnss: auto baud [%d]   \r", gnssBaudScanList[i]);
-    gnss.devSerial->begin(gnssBaudScanList[i]);
-    if (gnss.dev->getPVT()) {
+    devSerial->begin(gnssBaudScanList[i]);
+    if (dev->isConnected()) {
       break;
     }
   }
@@ -186,6 +248,8 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
   sfe_ublox_ls_src_e            src;
   src = SFE_UBLOX_LS_SRC_GPS;
   gnss.leapSec = gnss.dev->getCurrentLeapSeconds(src, 10);
+
+  if(pPVT->flags3.bits.invalidLlh) goto fail;
 
   gnss.tmGpsUtc.tm_year  = pPVT->year - 1900;
   gnss.tmGpsUtc.tm_mon   = pPVT->month-1;
@@ -293,10 +357,6 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
   }
 
 
-  LoraSend((const char *)pPVT, sizeof(UBX_NAV_PVT_data_t));     // for test
-  //LoraSend((const char *)pPVT, 400);     // for test
-
-
   if(gnss.debug & GNSS_DEBUG_SHOW_PVT) {
     char        buf[256];
     int         len = 0;
@@ -312,11 +372,15 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
     int32_t     nano;
     nano = (pPVT->nano<0)? CONFIG_GNSS_VAL10E9+pPVT->nano: pPVT->nano;
 
+    int         fixValue;
+    fixValue = GnssGetFixTypeValue();
+
     len  = sprintf(buf + len, "gps NAV PVT %lld.%09ld", gnss.tai, nano);
     len += sprintf(buf + len, " %04d%02d%02d%02d%02d%02d%03d %09ld", pPVT->year, pPVT->month, pPVT->day, pPVT->hour, pPVT->min, pPVT->sec, msec, pPVT->nano);
     len += sprintf(buf + len, " %ld: %ld %ld %ld (%4d %4d) ", pPVT->iTOW, pPVT->lat, pPVT->lon, pPVT->hMSL, (int)pPVT->hAcc*10, (int)pPVT->vAcc*10);
     len += sprintf(buf + len, " %ld %ld %ld", pPVT->gSpeed, pPVT->headMot, pPVT->headAcc);
-    len += sprintf(buf + len, " %d(%d)\n", pPVT->fixType, pPVT->flags.bits.carrSoln);
+    len += sprintf(buf + len, " %d(%d) %s\n", pPVT->fixType, pPVT->flags.bits.carrSoln, GnssGetFixValueText(fixValue));
+    //GnssGetFixTypeText(pPVT->fixType, (int)pPVT->flags.all)
 
     Serial.print(buf);
   }
@@ -325,7 +389,7 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
 
   gnss.seq++;
 
-
+fail:
  return;
 }
 
@@ -343,8 +407,8 @@ GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos)
     pPkt->lon    = pHpPos->lon  * 100LL + pHpPos->lonHp;
     pPkt->hMSL  += pHpPos->hMSLHp;
     pPkt->height+= pHpPos->heightHp;
-    pPkt->hAcc  += pHpPos->hAcc;
-    pPkt->vAcc  += pHpPos->vAcc;
+    pPkt->hAcc   = pHpPos->hAcc;
+    pPkt->vAcc   = pHpPos->vAcc;
 
     PacketCalcSumAndFillHeader((struct _stPacketGeneric *)pPkt, sizeof(struct _stPacketGnssPvt));
 
@@ -352,8 +416,11 @@ GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos)
 
 
     if(gnss.debug & GNSS_DEBUG_SHOW_HPPOSLLH) {
-      Serial.printf("gps NAV HP POSLLH                                            %ld: %lld %lld %ld (%4d %4d)\n",
+      Serial.printf("gps NAV HP POSLLH                                            %ld: %lld %lld %ld (%4d %4d) ",
                     gnss.pktLatest.iTOW, gnss.pktLatest.lat, gnss.pktLatest.lon, gnss.pktLatest.hMSL, pPkt->hAcc, pPkt->vAcc);
+
+      Serial.printf(" %d(%d) %s\n", pPkt->fixType, pPkt->flags>>6, GnssGetFixTypeText(pPkt->fixType, (int)pPkt->flags));
+
     }
 
     // calc pos average
@@ -370,6 +437,58 @@ GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos)
     Serial.printf("# gpss pos llh -------skip  iTOW:%d %d\n", pPkt->iTOW, pHpPos->iTOW);
 
   }
+
+  return;
+}
+
+
+static void
+GnssCallbackQzss(UBX_RXM_QZSSL6_message_data_t *msg)
+{
+#if 0
+  uint16_t len = msg->lengthLSB | (uint16_t(msg->lengthMSB) << 8);
+
+  Serial.print("QZSS L6 received: ");
+  Serial.println(len);
+
+  Serial.printf("[b5 62 %02x %02x] ", msg->lengthLSB, msg->lengthMSB);
+  for (int i = 0; i < len; i++) {
+    Serial.printf("%02X ", msg->payload[i]);
+  }
+  Serial.printf("xx xx\n");
+#endif
+
+
+  uint16_t    payloadLen = msg->lengthLSB | (uint16_t(msg->lengthMSB) << 8);
+
+  // UBX frame: sync(2) + class/id(2) + len(2) + payload + cksum(2)
+#define HEADFOOT_SIZE   (6+2)
+  uint16_t    frameLen = payloadLen + HEADFOOT_SIZE;
+  uint8_t     frame[300];  // max QZSSL6 payload is ~264 bytes
+
+  frame[0] = 0xB5;
+  frame[1] = 0x62;
+  frame[2] = 0x02;         // UBX-RXM class
+  frame[3] = 0x73;         // QZSSL6 message id
+  frame[4] = msg->lengthLSB;
+  frame[5] = msg->lengthMSB;
+  if(payloadLen > sizeof(frame) - 8) payloadLen = sizeof(frame) - HEADFOOT_SIZE;
+  memcpy(&frame[6], msg->payload, payloadLen);
+
+  // Fletcher checksum (over bytes 2..5+payloadLen)
+  uint8_t     ckA = 0, ckB = 0;
+  for(int i = 2; i < 6 + payloadLen; i++) {
+    ckA += frame[i];
+    ckB += ckA;
+  }
+  frame[6 + payloadLen]     = ckA;
+  frame[6 + payloadLen + 1] = ckB;
+
+  // send to ZED_F9P
+  //gnss.devSerial->write(frame, frameLen);           // serial direct
+  gnss.dev->pushRawData(frame, frameLen);             // thr the gnss lib
+
+  LoraSend(frame, frameLen);
 
   return;
 }
@@ -490,3 +609,71 @@ GnssCommand(int ac, char *av[])
 
   return;
 }
+
+
+static int
+GnssGetFixTypeValue(void)
+{
+  int   val;
+  struct _stPacketGnssPvt   *pkt = &gnss.pktLatest;
+
+  if(       GnssIsNoFix(pkt->fixType, pkt->flags))   { val = GNSS_FIXVALUE_NO_FIX;
+  } else if(GnssIs2d(pkt->fixType, pkt->flags))      { val = GNSS_FIXVALUE_2D;
+  } else if(GnssIs3d(pkt->fixType, pkt->flags))      { val = GNSS_FIXVALUE_3D;
+  } else if(GnssIs3dDgnss(pkt->fixType, pkt->flags)) { val = GNSS_FIXVALUE_3D_DGNSS;
+  } else if(GnssIs3dFloat(pkt->fixType, pkt->flags)) { val = GNSS_FIXVALUE_3D_FLOAT;
+  } else if(GnssIs3dFixed(pkt->fixType, pkt->flags)) { val = GNSS_FIXVALUE_3D_FIXED;
+  }
+
+  return val;
+}
+
+
+static const char *
+GnssGetFixValueText(int fixValue)
+{
+  const char    *ptr;
+
+  switch(fixValue) {
+  default:
+  case  GNSS_FIXVALUE_NO_FIX:   ptr = gnssFixText_NoFix;      break;
+  case  GNSS_FIXVALUE_2D:       ptr = gnssFixText_2dFix;      break;
+  case  GNSS_FIXVALUE_3D:       ptr = gnssFixText_3dFix;      break;
+  case  GNSS_FIXVALUE_3D_DGNSS: ptr = gnssFixText_3dFixDgnss; break;
+  case  GNSS_FIXVALUE_3D_FLOAT: ptr = gnssFixText_3dFixFloat; break;
+  case  GNSS_FIXVALUE_3D_FIXED: ptr = gnssFixText_3dFixFixed; break;
+  }
+
+  return ptr;
+}
+
+
+static const char *
+GnssGetFixTypeText(int fixType, int flags)
+{
+  const char    *ptr;
+
+  switch(fixType & 7) {
+  default:
+  case  0: ptr = gnssFixText_NoFix;              break;
+  case  1: ptr = gnssFixText_DeadReckoning;      break;
+  case  2: ptr = gnssFixText_2dFix;              break;
+  case  3:
+    if(flags & 2) {             // flags.diffSoln (bit1)
+      switch((flags >> 6) & 3) {  // flags.carrSoln (bit7,6)
+      default:
+      case        0: ptr = gnssFixText_3dFixDgnss; break;
+      case        1: ptr = gnssFixText_3dFixFloat; break;
+      case        2: ptr = gnssFixText_3dFixFixed; break;
+      }
+    } else {
+      ptr = gnssFixText_3dFix;
+    }
+    break;
+  case  4: ptr = gnssFixText_GnssDeadReckoning;  break;
+  case  5: ptr = gnssFixText_TimeOnly;           break;
+  }
+
+  return ptr;
+}
+

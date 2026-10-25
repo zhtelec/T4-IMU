@@ -19,10 +19,14 @@ void            GnssCommand(int ac, char *av[]);
 
 
 #ifdef  _GNSS_CPP_
-static void     GnssInitSetBaud(void);
+static void     GnssInitSetBaud(SFE_UBLOX_GNSS_SERIAL *dev, HardwareSerial *devSerial);
 static void     GnssCallbackPvt(UBX_NAV_PVT_data_t *pData);
 static void     GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos);
+static void     GnssCallbackQzss(UBX_RXM_QZSSL6_message_data_t *msg);
 static void     GnssCallbackRtcm1005(RTCM_1005_data_t *);
+static int      GnssGetFixTypeValue(void);
+static const char *     GnssGetFixValueText(int fixValue);
+static const char *     GnssGetFixTypeText(int fixType, int flags);
 #endif
 
 
