@@ -22,11 +22,14 @@ void            GnssCommand(int ac, char *av[]);
 static void     GnssInitSetBaud(SFE_UBLOX_GNSS_SERIAL *dev, HardwareSerial *devSerial);
 static void     GnssCallbackPvt(UBX_NAV_PVT_data_t *pData);
 static void     GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos);
-static void     GnssCallbackQzss(UBX_RXM_QZSSL6_message_data_t *msg);
-static void     GnssCallbackRtcm1005(RTCM_1005_data_t *);
+static void     GnssCallbackQzssL6(UBX_RXM_QZSSL6_message_data_t *msg);
+static void     GnssCallbackRtcm1005(RTCM_1005_data_t *pRtcm);
 static int      GnssGetFixTypeValue(void);
 static const char *     GnssGetFixValueText(int fixValue);
 static const char *     GnssGetFixTypeText(int fixType, int flags);
+static void     GnssDetectFixType(void);
+static void     GnssChangeBaseStation(void);
+static void     GnssRecvRtcm(void);
 #endif
 
 

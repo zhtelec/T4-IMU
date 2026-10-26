@@ -21,6 +21,7 @@
 #include        "gnss.h"
 
 #define GNSS_DEBUG_SHOW_PACKET_ENABLE   0
+#define GNSS_DEBUG_SHOW_CLAS_RTCM       0
 
 
 static SFE_UBLOX_GNSS_SERIAL  GnssDev;
@@ -57,6 +58,7 @@ struct _stGnss {
 #define GNSS_FIXVALUE_3D_DGNSS   3
 #define GNSS_FIXVALUE_3D_FLOAT   4
 #define GNSS_FIXVALUE_3D_FIXED   5
+#define GNSS_FIXVALUE_TIMEONLY   6
 
   int                   cntLock;        // +2 pps intr, -1 every 1sec
 
@@ -71,6 +73,8 @@ struct _stGnss {
   int64_t               llhAverageHeight;
   int64_t               llhAverage_hMSL;
   int                   llhAverageCount;
+
+  int                   fBaseStation;
 };
 static struct _stGnss   gnss;
 
@@ -80,6 +84,7 @@ static struct _stGnss   gnss;
 #define GnssIs3dDgnss(type, flags)      (type == 3 &&  (flags & 2) && (flags & 0xc0) == 0x00)
 #define GnssIs3dFloat(type, flags)      (type == 3 &&  (flags & 2) && (flags & 0xc0) == 0x40)
 #define GnssIs3dFixed(type, flags)      (type == 3 &&  (flags & 2) && (flags & 0xc0) == 0x80)
+#define GnssIsTime(type, flags)         (type == 5)
 
 static const char       gnssFixText_NoFix[]             = "No fix";
 static const char       gnssFixText_DeadReckoning[]     = "Dead Reckoning";
@@ -112,6 +117,7 @@ GnssInit(void)
   gnss.dev->enableDebugging(Serial);
 #endif
 
+  gnss.dev->setRTCMBufferSize(2048);
   // begin the gnss library
   gnss.dev->begin(*gnss.devSerial, 10, true);
 
@@ -173,8 +179,44 @@ GnssInit(void)
     Serial.printf("# gnss: D9C UART1_BAUDRATE = %d... done\n", val);
     gnss.devSerialClas->begin(CONGIG_GNSS_SERIAL_BAUD);
 
+    val = 0;
+    re = gnss.dev->setVal32( UBLOX_CFG_TMODE_MODE, val);
+    Serial.printf("# gnss: TIME_MODE = %d... %s\n", val, re?"done": "ng");
+
+#if 0
+    val = 1;
+    re = gnss.dev->setVal32( UBLOX_CFG_TMODE_MODE, val);
+    Serial.printf("# gnss: TIME_MODE = %d... %s\n", val, re?"done": "ng");
+
+    val = 300;
+    re = gnss.dev->setVal32(UBLOX_CFG_TMODE_SVIN_MIN_DUR, val);
+    Serial.printf("# gnss: TIME_MODE = %d... %s\n", val, re?"done": "ng");
+
+    val = 5000;
+    re = gnss.dev->setVal32(UBLOX_CFG_TMODE_SVIN_ACC_LIMIT, val);
+    Serial.printf("# gnss: TIME_MODE = %d... %s\n", val, re?"done": "ng");
+#endif
+
+    val = 1;
+    re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_RTCM_3X_TYPE1005_UART1, val);
+    Serial.printf("# gnss: RTCM_3X_TYPE1005 = %d... %s\n", val, re?"done": "ng");
+
+    val = 1;
+    re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_RTCM_3X_TYPE1074_UART1, val);              // GPS
+    Serial.printf("# gnss: RTCM_3X_TYPE1074 = %d... %s\n", val, re?"done": "ng");
+
+#if 0
+    val = 1;
+    re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_RTCM_3X_TYPE1114_UART1, val);              // QZSS  ZED-F9P is not support yet
+    Serial.printf("# gnss: RTCM_3X_TYPE1114 = %d... %s\n", val, re?"done": "ng");
+#endif
+
+    val = 1;
+    re = gnss.dev->setVal32(UBLOX_CFG_MSGOUT_RTCM_3X_TYPE1094_UART1, val);              // GALILEO
+    Serial.printf("# gnss: RTCM_3X_TYPE1094 = %d... %s\n", val, re?"done": "ng");
+
     // set callback of D9C
-    gnss.devClas->setRXMQZSSL6messageCallbackPtr(GnssCallbackQzss);
+    gnss.devClas->setRXMQZSSL6messageCallbackPtr(GnssCallbackQzssL6);
 
   }
 
@@ -197,19 +239,18 @@ GnssLoop(void)
   if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
     gnss.devClas->checkUblox();
     gnss.devClas->checkCallbacks();
+    if(gnss.fixValue == GNSS_FIXVALUE_TIMEONLY) {
+      GnssRecvRtcm();
+    }
   }
+
 
   if((gnss.t1Sec - SystemGetCounter()) >= 1000) {
     gnss.t1Sec = SystemGetCounter();
 
-    {
-      int         fixValue;
-      fixValue = GnssGetFixTypeValue();
-
-      if(gnss.fixValue != fixValue) {
-        Serial.printf("# gnss: fix type=%d (%s)\n", fixValue, GnssGetFixValueText(fixValue));
-        gnss.fixValue = fixValue;
-      }
+    if(SystemGetBoardId() == CONFIG_BOARDID_T4_IMU_PTPGM) {
+      GnssDetectFixType();
+      GnssChangeBaseStation();
     }
 
     if(gnss.cntLock > 0) gnss.cntLock--;
@@ -299,11 +340,11 @@ GnssCallbackPvt(UBX_NAV_PVT_data_t *pPVT)
   pPkt->tAcc            = pPVT->tAcc;           // unit ns    time accuracy
   pPkt->nano            = pPVT->nano;
 
-  pPkt->fixType         = pPVT->fixType;       // 0:NoFix, 1:DeadReckoningOnly, 2:2dFix, 3:3dFix, 5:TimeOnly
+  pPkt->fixType         = pPVT->fixType;        // 0:NoFix, 1:DeadReckoningOnly, 2:2dFix, 3:3dFix, 5:TimeOnly
   pPkt->flags           = pPVT->flags.all;
   pPkt->flags2          = pPVT->flags2.all;
   pPkt->numSV           = pPVT->numSV;          // pcs
-  pPkt->height          = pPVT->height*10;      // unit 0.1mm (ublox output in mm)
+  pPkt->height          = pPVT->height*10LL;    // unit 0.1mm (ublox output in mm)
 
   pPkt->lat             = pPVT->lat * 100LL;    // unit 10^-9 deg (ublox output is 10^-7)
 
@@ -443,9 +484,9 @@ GnssCallbackHpPosLLH(UBX_NAV_HPPOSLLH_data_t *pHpPos)
 
 
 static void
-GnssCallbackQzss(UBX_RXM_QZSSL6_message_data_t *msg)
+GnssCallbackQzssL6(UBX_RXM_QZSSL6_message_data_t *msg)
 {
-#if 0
+#if GNSS_DEBUG_SHOW_CLAS_RTCM
   uint16_t len = msg->lengthLSB | (uint16_t(msg->lengthMSB) << 8);
 
   Serial.print("QZSS L6 received: ");
@@ -455,40 +496,41 @@ GnssCallbackQzss(UBX_RXM_QZSSL6_message_data_t *msg)
   for (int i = 0; i < len; i++) {
     Serial.printf("%02X ", msg->payload[i]);
   }
-  Serial.printf("xx xx\n");
+  Serial.printf("[xx xx]\n");
 #endif
 
+  if(gnss.fixValue != GNSS_FIXVALUE_TIMEONLY) {
+    uint16_t    payloadLen = msg->lengthLSB | (uint16_t(msg->lengthMSB) << 8);
 
-  uint16_t    payloadLen = msg->lengthLSB | (uint16_t(msg->lengthMSB) << 8);
-
-  // UBX frame: sync(2) + class/id(2) + len(2) + payload + cksum(2)
+    // UBX frame: sync(2) + class/id(2) + len(2) + payload + cksum(2)
 #define HEADFOOT_SIZE   (6+2)
-  uint16_t    frameLen = payloadLen + HEADFOOT_SIZE;
-  uint8_t     frame[300];  // max QZSSL6 payload is ~264 bytes
+    uint16_t    frameLen = payloadLen + HEADFOOT_SIZE;
+    uint8_t     frame[512];  // max QZSSL6 payload is ~264 bytes
 
-  frame[0] = 0xB5;
-  frame[1] = 0x62;
-  frame[2] = 0x02;         // UBX-RXM class
-  frame[3] = 0x73;         // QZSSL6 message id
-  frame[4] = msg->lengthLSB;
-  frame[5] = msg->lengthMSB;
-  if(payloadLen > sizeof(frame) - 8) payloadLen = sizeof(frame) - HEADFOOT_SIZE;
-  memcpy(&frame[6], msg->payload, payloadLen);
+    frame[0] = 0xB5;
+    frame[1] = 0x62;
+    frame[2] = 0x02;         // UBX-RXM class
+    frame[3] = 0x73;         // QZSSL6 message id
+    frame[4] = msg->lengthLSB;
+    frame[5] = msg->lengthMSB;
+    if(payloadLen > sizeof(frame) - 8) payloadLen = sizeof(frame) - HEADFOOT_SIZE;
+    memcpy(&frame[6], msg->payload, payloadLen);
 
-  // Fletcher checksum (over bytes 2..5+payloadLen)
-  uint8_t     ckA = 0, ckB = 0;
-  for(int i = 2; i < 6 + payloadLen; i++) {
-    ckA += frame[i];
-    ckB += ckA;
+    // Fletcher checksum (over bytes 2..5+payloadLen)
+    uint8_t     ckA = 0, ckB = 0;
+    for(int i = 2; i < 6 + payloadLen; i++) {
+      ckA += frame[i];
+      ckB += ckA;
+    }
+    frame[6 + payloadLen]     = ckA;
+    frame[6 + payloadLen + 1] = ckB;
+
+    // send to ZED_F9P
+    //gnss.devSerial->write(frame, frameLen);           // serial direct
+    gnss.dev->pushRawData(frame, frameLen);             // thr the gnss lib
+
+    LoraSend((const char *)frame, frameLen);
   }
-  frame[6 + payloadLen]     = ckA;
-  frame[6 + payloadLen + 1] = ckB;
-
-  // send to ZED_F9P
-  //gnss.devSerial->write(frame, frameLen);           // serial direct
-  gnss.dev->pushRawData(frame, frameLen);             // thr the gnss lib
-
-  LoraSend(frame, frameLen);
 
   return;
 }
@@ -497,8 +539,6 @@ GnssCallbackQzss(UBX_RXM_QZSSL6_message_data_t *msg)
 static void
 GnssCallbackRtcm1005(RTCM_1005_data_t *pRtcm)
 {
-  LoraSend((const char *)pRtcm, sizeof(RTCM_1005_data_t));
-  Serial.printf("gnss rtcm1005 xxxx\n");
   return;
 }
 
@@ -614,7 +654,7 @@ GnssCommand(int ac, char *av[])
 static int
 GnssGetFixTypeValue(void)
 {
-  int   val;
+  int   val = 0;
   struct _stPacketGnssPvt   *pkt = &gnss.pktLatest;
 
   if(       GnssIsNoFix(pkt->fixType, pkt->flags))   { val = GNSS_FIXVALUE_NO_FIX;
@@ -623,6 +663,7 @@ GnssGetFixTypeValue(void)
   } else if(GnssIs3dDgnss(pkt->fixType, pkt->flags)) { val = GNSS_FIXVALUE_3D_DGNSS;
   } else if(GnssIs3dFloat(pkt->fixType, pkt->flags)) { val = GNSS_FIXVALUE_3D_FLOAT;
   } else if(GnssIs3dFixed(pkt->fixType, pkt->flags)) { val = GNSS_FIXVALUE_3D_FIXED;
+  } else if(GnssIsTime(pkt->fixType, pkt->flags))    { val = GNSS_FIXVALUE_TIMEONLY;
   }
 
   return val;
@@ -642,6 +683,7 @@ GnssGetFixValueText(int fixValue)
   case  GNSS_FIXVALUE_3D_DGNSS: ptr = gnssFixText_3dFixDgnss; break;
   case  GNSS_FIXVALUE_3D_FLOAT: ptr = gnssFixText_3dFixFloat; break;
   case  GNSS_FIXVALUE_3D_FIXED: ptr = gnssFixText_3dFixFixed; break;
+  case  GNSS_FIXVALUE_TIMEONLY: ptr = gnssFixText_TimeOnly; break;
   }
 
   return ptr;
@@ -672,8 +714,107 @@ GnssGetFixTypeText(int fixType, int flags)
     break;
   case  4: ptr = gnssFixText_GnssDeadReckoning;  break;
   case  5: ptr = gnssFixText_TimeOnly;           break;
+
   }
 
   return ptr;
 }
 
+
+static void
+GnssDetectFixType(void)
+{
+  int         fixValue;
+  fixValue = GnssGetFixTypeValue();
+
+  if(gnss.fixValue != fixValue) {
+    Serial.printf("# gnss: fix type=%d (%s)\n", fixValue, GnssGetFixValueText(fixValue));
+    gnss.fixValue = fixValue;
+  }
+}
+
+
+static void
+GnssChangeBaseStation(void)
+{
+  int           re;
+  int32_t       val;
+  int64_t       lat, lon, hei, msl;
+
+  if(!gnss.fBaseStation) {
+    if(gnss.llhAverageCount >= CONFIG_GNSS_SWTICH_BASE_TIME) {
+      gnss.fBaseStation = 1;
+
+      lat = gnss.llhAverageLatitude  / gnss.llhAverageCount;
+      lon = gnss.llhAverageLongitude / gnss.llhAverageCount;
+      hei = gnss.llhAverageHeight    / gnss.llhAverageCount;
+      msl = gnss.llhAverage_hMSL     / gnss.llhAverageCount;
+
+      val = 1;          // 0: ECEF, 1:lat/lon/hei
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_POS_TYPE, val);
+      Serial.printf("# gnss: TMODE_POS_TYPE = %d... %s\n", val, re?"done": "ng");
+
+      val = lat/100LL;
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_LAT, val);
+      Serial.printf("# gnss: TMODE_LAT = %ld... %s\n", val, re?"done": "ng");
+      val = lat - val*100L;
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_LAT_HP, val);
+      Serial.printf("# gnss: TMODE_LAT_HP = %ld... %s\n", val, re?"done": "ng");
+
+      val = lon/100LL;
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_LON, val);
+      Serial.printf("# gnss: TMODE_LON = %d... %s\n", val, re?"done": "ng");
+      val = lon - val*100L;
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_LON_HP, val);
+      Serial.printf("# gnss: TMODE_LON_HP = %d... %s\n", val, re?"done": "ng");
+
+      val = hei/100LL;
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_HEIGHT, val);
+      Serial.printf("# gnss: TMODE_HEIGHT = %d... %s\n", val, re?"done": "ng");
+      val = hei - val*100L;
+      re = gnss.dev->setVal32(UBLOX_CFG_TMODE_HEIGHT_HP, val);
+      Serial.printf("# gnss: TMODE_HEIGHT_HP = %d... %s\n", val, re?"done": "ng");
+
+      val = 2;
+      re = gnss.dev->setVal32( UBLOX_CFG_TMODE_MODE, val);
+      Serial.printf("# gnss: TIME_MODE = %d... %s\n", val, re?"done": "ng");
+
+      SystemSetLed0(1);
+
+      Serial.printf("# gnss: set base station mode lat:%lld lon:%lld hei:%lld msl:%lld\n",
+                    lat, lon, hei, msl);
+
+    }
+  }
+
+  return;
+}
+
+
+static void
+GnssRecvRtcm(void)
+{
+  uint8_t       rtcm[512];
+  int           num;
+  int           len;
+
+  len = gnss.dev->rtcmBufferAvailable();
+  if(len > 0) {
+
+    len = min(len, (uint16_t)sizeof(rtcm));
+    len = gnss.dev->extractRTCMBufferData(rtcm, len);
+    num = ((uint16_t)rtcm[3] << 4) | (rtcm[4] >> 4);
+
+    if(num == 1005 || num == 1074) {
+      LoraSend((const char *)rtcm, len);
+    }
+
+#if GNSS_DEBUG_SHOW_CLAS_RTCM
+    Serial.printf("gnss: rtcm%4d(%3d)  %x %x %x %x %x %x\n",
+                  num,
+                  len, rtcm[0], rtcm[1], rtcm[2], rtcm[3], rtcm[4], rtcm[5], rtcm[6], rtcm[7]);
+#endif
+  }
+
+  return;
+}

@@ -247,7 +247,6 @@ SystemPinSettings(void)
     pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
     pinMode(CONFIG_GPIO_LED, OUTPUT);
 
-    pinMode(CONFIG_GPIO_LED0_T4_IMU, OUTPUT);
   }
 
   return;
@@ -784,6 +783,7 @@ SystemSetLed0(int on)
   switch(SystemGetBoardId()) {
   case        CONFIG_BOARDID_T4_IMU:
   case        CONFIG_BOARDID_T4_SENSECAP:
+  case        CONFIG_BOARDID_T4_IMU_PTPGM:
     digitalWrite(CONFIG_GPIO_LED0_T4_IMU, val);
     break;
   default:
